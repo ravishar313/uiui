@@ -6,7 +6,7 @@ uiui updates itself from GitHub Releases on a public repository (`UIUIUpdateRepo
 
 1. Bump `CFBundleShortVersionString` (dotted numbers, for example `1.2.0`) and `CFBundleVersion` in `resources/Info.plist`.
 2. Run `scripts/package-release.sh`. It builds an app-only bundle (`build-app.sh --without-models`, about 14 MB), zips it as `build/release-<version>/uiui-<version>-arm64.zip`, writes `<zip>.sha256`, and checks the zip extracts to a bundle with a valid signature. Without `--publish` it only prints what it would upload.
-3. Publish: `scripts/package-release.sh --publish --notes notes.md` creates release `v<version>` with both files. It refuses to publish if a model pack the build needs is not yet released.
+3. Publish: `scripts/package-release.sh --publish --notes notes.md` creates release `v<version>` with both files. It refuses to publish if a model pack the build needs is not yet released. The release always includes the lite installer disk image for new users.
 
 The full app with bundled models (for a DMG or a first install) is still `scripts/build-app.sh`.
 

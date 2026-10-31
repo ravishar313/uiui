@@ -42,10 +42,17 @@ ditto -x -k "$archive" "$check"
 codesign --verify --strict "$check/uiui.app"
 print "Archive verified: $archive ($(/usr/bin/stat -f %z "$archive") bytes)"
 cat "$archive.sha256"
+# Every release carries the installer for new users, not only the update archive.
+scripts/package-dmg.sh
+dmg="$PWD/build/dmg-$version-lite/uiui-$version-lite.dmg"
+[[ -f "$dmg" && -f "$dmg.sha256" ]] || { print -u2 "Installer was not built: $dmg"; exit 1; }
+extra_assets+=("$dmg" "$dmg.sha256")
 if (( ! publish )); then
   print "Would upload to ${repository:-<UIUIUpdateRepository>} as v$version:"
   print "  $archive"
   print "  $archive.sha256"
+  print "  $dmg"
+  print "  $dmg.sha256"
   print "Run with --publish --notes <file> to create the release."
   exit 0
 fi

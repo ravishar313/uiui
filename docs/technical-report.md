@@ -231,7 +231,7 @@ An unlicensed NPTEL mirror was downloaded during early work. It is not in the fi
 - Some training labels are weak: subtitles, unaligned radio news and the romanisation tail.
 - Hindi output is Roman script only.
 - Native English is below the base model, and two targeted attempts did not close the gap.
-- Real-user testing of this exact build is still pending at the time of writing.
+- This build has had hands-on testing by its author only, not a wider user study.
 
 ## 11. Reproducibility
 
