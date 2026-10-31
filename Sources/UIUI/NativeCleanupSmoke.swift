@@ -1,3 +1,4 @@
+#if DEBUG
 import AVFoundation
 import Darwin
 import Foundation
@@ -280,3 +281,4 @@ private final class RegisteredFlowDelivery: TextDelivering {
     }
     func cancel() { native.cancel() }
 }
+#endif

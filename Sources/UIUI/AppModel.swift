@@ -13,6 +13,8 @@ final class AppModel {
     var selectedItemID: UUID?
     var searchText = "" { didSet { scheduleSearch() } }
     var captureText = ""
+    /// Formatting decision on the raw recognised text of the completion being saved.
+    private var completionRawFormatted: Bool?
     var captureMode: CaptureMode = .dictation { didSet { if oldValue != captureMode && speech.isRecording { cancelRecording() } } }
     /// The active dictionary profile persists independently of recovery metadata.
     var captureProject: String {
@@ -201,6 +203,10 @@ final class AppModel {
             || speech.hasActiveSession || recordingStartTask != nil
             || manualCleanupInProgress || dictationFeedback?.state == .working
     }
+    /// A capture, cleanup or paste is under way: anything an update relaunch would lose.
+    var isDictationWorkInFlight: Bool {
+        hasCancellableVoiceInput || voiceTypingOperationID != nil || voiceResultIsBeingHandled
+    }
     var liveTranscript: String { speech.transcript }
     var speechStatus: String { speech.stateDescription }
     var speechEngineDescription: String { voiceEnabled ? voice.engineDescription : speech.engineDescription }
@@ -253,7 +259,7 @@ final class AppModel {
             if let id = manualRecoveryCaptureID { recordingRecovery.update(id: id, text: text) }
             guard captureMode == .dictation, LocalSpeechModel.supports(locale: settings.speechLocale) else { return }
             let words = TextProcessing.applyingVocabulary(to: text, entries: effectiveVocabulary, project: captureProject)
-            cleanup.update(words, captureID: captureGeneration)
+            cleanup.update(words, captureID: captureGeneration, formatted: DictationCleanupText.isFormatted(text))
         }
         speech.onRecordingSound = { [weak self] cue in self?.playRecordingSound(cue) }
         speech.onAudioLevel = { [weak self] level in self?.manualVoiceLevel = level }
@@ -457,6 +463,7 @@ final class AppModel {
         let normalized = TextProcessing.applyingVocabulary(to: text, entries: effectiveVocabulary, project: captureProject)
         guard !normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { preserveManualRecordingRecovery(); statusMessage = "No speech detected. Your draft is unchanged."; onActivityChanged?(); return }
         captureText = captureText.isEmpty ? normalized : captureText + "\n" + normalized
+        completionRawFormatted = DictationCleanupText.isFormatted(text)
         statusMessage = "Captured."
         onActivityChanged?()
         saveCapture(source: .dictationCompletion)
@@ -474,6 +481,8 @@ final class AppModel {
         let explicitRecoveryID = source == .composer ? explicitlyOpenedRecoveryDraftID : nil
         let reviewedDraftID = explicitRecoveryID ?? openedRecoveryID ?? (isRecoveryReview ? recoveryID : nil)
         let project = recordingRecovery.drafts.first(where: { $0.id == reviewedDraftID })?.project ?? captureProject
+        let rawFormatted = source == .dictationCompletion ? completionRawFormatted : nil
+        completionRawFormatted = nil
         let useCleanup = !isRecoveryReview && LocalSpeechModel.supports(locale: settings.speechLocale)
         let duration = recordingStartedAt.map { Date().timeIntervalSince($0) * 1000 }
         recordingStartedAt = nil
@@ -485,7 +494,7 @@ final class AppModel {
                 if captureGeneration == generation { manualCleanupInProgress = false; onActivityChanged?() }
             }
             let cleanedText: String
-            do { cleanedText = useCleanup ? try await cleanup.finish(original, captureID: generation) : original }
+            do { cleanedText = useCleanup ? try await cleanup.finish(original, captureID: generation, formatted: rawFormatted) : original }
             catch { return }
             guard captureGeneration == generation, !Task.isCancelled else { return }
             let text = isRecoveryReview ? original

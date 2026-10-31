@@ -89,16 +89,30 @@ final class TextDelivery: TextDelivering {
         guard token == generation, !Task.isCancelled else {
             return .held("Paste cancelled. Your text is available to copy.")
         }
-        guard dependencies.writeClipboard(text) else {
+        // Only a paste we are about to send is transient. When paste is already
+        // known to be unavailable the person will paste by hand, so the text must
+        // stay visible to clipboard history like any ordinary copy.
+        var isTransient = false
+        if case .ready = preparation { isTransient = true }
+        guard dependencies.write(text, transient: isTransient) else {
             return .held("The clipboard could not accept the text. Your text is available to copy.")
         }
-        let ownChangeCount = dependencies.clipboardChangeCount()
+        var ownChangeCount = dependencies.clipboardChangeCount()
         func copiedResult(_ reason: String) -> DeliveryResult {
             // AX validation can spend time in another process. Even copy-only
             // exits must not claim our payload survived a newer user's copy.
             guard dependencies.clipboardChangeCount() == ownChangeCount,
                   dependencies.clipboardMatches(text) else {
                 return .held("The clipboard changed. Your text is available to copy.")
+            }
+            if isTransient {
+                // Paste fell through after a transient write: the text is now kept
+                // for the person to paste, so rewrite it as an ordinary copy.
+                guard dependencies.write(text, transient: false) else {
+                    return .held("The clipboard could not accept the text. Your text is available to copy.")
+                }
+                isTransient = false
+                ownChangeCount = dependencies.clipboardChangeCount()
             }
             return .copied(reason)
         }
@@ -154,6 +168,9 @@ final class TextDelivery: TextDelivering {
         TextDeliveryDependencies(
             writeClipboard: { text in
                 ClipboardWriteTransaction.write(text, using: .native(NSPasteboard.general))
+            },
+            writeTransientClipboard: { text in
+                ClipboardWriteTransaction.write(text, transient: true, using: .native(NSPasteboard.general))
             },
             clipboardChangeCount: { NSPasteboard.general.changeCount },
             preparePaste: { target in
@@ -377,19 +394,30 @@ struct TextDeliveryDependencies {
         case ready(PreparedPaste)
     }
     let writeClipboard: @MainActor (String) -> Bool
+    /// Optional transient (clipboard-manager ignored) variant for the automatic
+    /// paste path; absent, `writeClipboard` is used for both.
+    let writeTransientClipboard: (@MainActor (String) -> Bool)?
     let clipboardChangeCount: @MainActor () -> Int
     let preparePaste: @MainActor (DeliveryTarget?) -> Preparation
     let waitForPasteConsumption: @MainActor () async -> Void
     let waitForModifiersReleased: @MainActor () async -> Bool
     let clipboardMatches: @MainActor (String) -> Bool
 
+    @MainActor
+    func write(_ text: String, transient: Bool) -> Bool {
+        if transient, let writeTransientClipboard { return writeTransientClipboard(text) }
+        return writeClipboard(text)
+    }
+
     init(writeClipboard: @escaping @MainActor (String) -> Bool,
+         writeTransientClipboard: (@MainActor (String) -> Bool)? = nil,
          clipboardChangeCount: @escaping @MainActor () -> Int,
          preparePaste: @escaping @MainActor (DeliveryTarget?) -> Preparation,
          waitForPasteConsumption: @escaping @MainActor () async -> Void,
          waitForModifiersReleased: @escaping @MainActor () async -> Bool = { true },
          clipboardMatches: @escaping @MainActor (String) -> Bool = { _ in true }) {
         self.writeClipboard = writeClipboard
+        self.writeTransientClipboard = writeTransientClipboard
         self.clipboardChangeCount = clipboardChangeCount
         self.preparePaste = preparePaste
         self.waitForPasteConsumption = waitForPasteConsumption
@@ -403,7 +431,10 @@ struct TextDeliveryDependencies {
 /// deliberate completed-text copy. Successful copies never restore old data.
 @MainActor
 enum ClipboardWriteTransaction {
-    static func write(_ text: String, using operations: ClipboardWriteOperations) -> Bool {
+    /// `transient` adds the nspasteboard.org markers that ask clipboard managers
+    /// not to record automatic dictation pastes. Never set it for a copy the
+    /// person asked for or must paste by hand.
+    static func write(_ text: String, transient: Bool = false, using operations: ClipboardWriteOperations) -> Bool {
         let originalCount = operations.changeCount()
         let originalItems = operations.readItems()
         guard operations.changeCount() == originalCount else { return false }
@@ -417,8 +448,15 @@ enum ClipboardWriteTransaction {
             if !originalItems.isEmpty { _ = operations.writeItems(originalItems) }
             return false
         }
+        if transient { operations.markTransient() }
         return true
     }
+}
+
+/// nspasteboard.org conventions honoured by clipboard managers.
+enum ClipboardMarker {
+    static let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+    static let autoGenerated = NSPasteboard.PasteboardType("org.nspasteboard.AutoGeneratedType")
 }
 
 /// The same primitive sequence is used by native delivery and in-memory tests.
@@ -429,6 +467,8 @@ struct ClipboardWriteOperations {
     let clearContents: @MainActor () -> Int
     let writeString: @MainActor (String) -> Bool
     let writeItems: @MainActor ([NSPasteboardItem]) -> Bool
+    /// Adds the transient and auto-generated markers to the string just written.
+    var markTransient: @MainActor () -> Void = {}
 
     @MainActor
     static func native(_ pasteboard: NSPasteboard) -> ClipboardWriteOperations {
@@ -440,7 +480,12 @@ struct ClipboardWriteOperations {
             readItems: { nil },
             clearContents: { pasteboard.clearContents() },
             writeString: { pasteboard.setString($0, forType: .string) },
-            writeItems: { pasteboard.writeObjects($0) }
+            writeItems: { pasteboard.writeObjects($0) },
+            markTransient: {
+                let markers = [ClipboardMarker.transient, ClipboardMarker.autoGenerated]
+                pasteboard.addTypes(markers, owner: nil)
+                for marker in markers { pasteboard.setData(Data(), forType: marker) }
+            }
         )
     }
 }

@@ -69,8 +69,8 @@ final class TextDeliveryTests: XCTestCase {
         XCTAssertTrue(delivery.delivered.isEmpty)
         model.performVoiceTyping("First version scratch that better version")
         await model.voiceActionTask?.value
-        XCTAssertEqual(delivery.delivered, ["better version."])
-        XCTAssertEqual(model.items.first?.body, "better version.")
+        XCTAssertEqual(delivery.delivered, ["better version"])
+        XCTAssertEqual(model.items.first?.body, "better version")
     }
 
     @MainActor

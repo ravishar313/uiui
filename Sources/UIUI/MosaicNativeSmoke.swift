@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import ImageIO
 import SwiftUI
@@ -523,3 +524,4 @@ enum MosaicNativeSmoke {
         func release() {}
     }
 }
+#endif

@@ -30,12 +30,20 @@ final class DictationPunctuationTests: XCTestCase {
     }
 
     func testStatementsAndShortCommandsGetOnlyTerminalPeriod() {
-        for text in ["The build is ready", "okay", "ship it", "Have a look", "Do the build tomorrow",
+        for text in ["The build is ready", "ship it now", "Have a look", "Do the build tomorrow",
                      "Do it now", "Do this tomorrow", "Do that again", "Have it ready by noon",
                      "Have this ready", "Don’t you worry", "Don’t you touch that",
                      "May you have a wonderful day", "May they rest in peace"] {
             XCTAssertEqual(DictationPunctuation.finalize(text), text + ".")
         }
+    }
+
+    func testFragmentsUnderThreeWordsGetNoFinalMark() {
+        for text in ["okay", "ship it", "Thanks Priya", "yes", "  done  "] {
+            XCTAssertEqual(DictationPunctuation.finalize(text), text)
+        }
+        XCTAssertEqual(DictationPunctuation.finalize("can you check it"), "can you check it?")
+        XCTAssertEqual(DictationPunctuation.finalize("send it over"), "send it over.")
     }
 
     func testIndirectQuestionsAndHowToHeadingAreNotPromotedToQuestions() {

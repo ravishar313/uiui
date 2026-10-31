@@ -21,7 +21,7 @@ One persistent `NotchVisualFeedback` owns the existing TimelineView, Canvas, cam
 ## Verification
 
 - Full Swift suite covers existing behavior plus setting migration, future-value fallback, reload, camera geometry and hot style switching during active capture and dispatch.
-- `--notch-style-preview OUTPUT` (also available through the earlier `--mosaic-preview` spelling) renders 198 real SwiftUI state configurations across three styles. It checks physical-camera black pixels, terminal darkness, visually distinct output, per-style mounted receipt expiry and a Mosaic-to-Liquid switch during dispatch. The same helper saves actual Settings picker screenshots for layout review.
+- `--notch-style-preview OUTPUT` (debug builds only: run `swift build` then `.build/debug/UIUI --notch-style-preview OUTPUT`; release builds and `scripts/build-app.sh` ignore all developer flags) (also available through the earlier `--mosaic-preview` spelling) renders 198 real SwiftUI state configurations across three styles. It checks physical-camera black pixels, terminal darkness, visually distinct output, per-style mounted receipt expiry and a Mosaic-to-Liquid switch during dispatch. The same helper saves actual Settings picker screenshots for layout review.
 
 The helpers use isolated settings, public fixture text and owned windows. They do not open private history or a microphone. Native delivery checks use disposable fields and restore the clipboard only while they still own it.
 

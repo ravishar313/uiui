@@ -1,3 +1,4 @@
+#if DEBUG
 import AVFoundation
 import Foundation
 
@@ -39,3 +40,4 @@ enum MicrophoneNativeSmoke {
         }
     }
 }
+#endif

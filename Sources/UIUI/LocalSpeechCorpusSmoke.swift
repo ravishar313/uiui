@@ -1,3 +1,4 @@
+#if DEBUG
 import AVFoundation
 import CryptoKit
 import Darwin
@@ -321,3 +322,4 @@ private struct CorpusSmokeReportingDecoder: ParakeetStreamingDecoding {
     }
     func cleanup() async { await native.cleanup() }
 }
+#endif

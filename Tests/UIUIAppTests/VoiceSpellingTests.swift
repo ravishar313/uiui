@@ -94,6 +94,20 @@ final class VoiceSpellingTests: XCTestCase {
     }
 
     @MainActor
+    func testFormattedDecisionUsesRawSpeechNotDictionaryAdjustedText() async throws {
+        let cleanup = SpellingCleanup()
+        let model = try model(delivery: SpellingDelivery(), cleanup: cleanup)
+        model.settings.saveDictationHistory = false
+        XCTAssertTrue(model.addVocabulary(heard: "priya", replacement: "Priya", project: "All projects"))
+        model.voiceInputKind = .dictation
+        model.performVoiceTyping("send it to priya")
+        await model.voiceActionTask?.value
+        // The dictionary made the text contain a capital, but the speech was bare.
+        XCTAssertEqual(cleanup.received, ["send it to Priya"])
+        XCTAssertEqual(cleanup.formattedFlags, [false])
+    }
+
+    @MainActor
     func testManualDictationAlsoPreservesTheStoredSpellingAfterCleanup() async throws {
         let delivery = SpellingDelivery()
         let cleanup = SpellingCleanup(); cleanup.result = "Uiui makes notes"
@@ -172,9 +186,14 @@ private final class SpellingCleanup: DictationCleaning {
     func prepare() {}
     func begin(_ captureID: UUID) {}
     func update(_ text: String, captureID: UUID) {}
+    var formattedFlags: [Bool?] = []
     func finish(_ text: String, captureID: UUID) async throws -> String {
         received.append(text)
         return result ?? text
+    }
+    func finish(_ text: String, captureID: UUID, formatted: Bool?) async throws -> String {
+        formattedFlags.append(formatted)
+        return try await finish(text, captureID: captureID)
     }
     func cancel() {}
     func release() {}

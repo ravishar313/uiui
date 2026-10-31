@@ -66,9 +66,12 @@ public enum DictationCleanupText {
     /// Speech models that already punctuate and capitalise (Phonon 2, Parakeet)
     /// are better at it than text-only cleanup, which re-derives every mark from
     /// bare words and cannot hear pauses or intonation. Such text keeps its own
-    /// formatting; only unformatted text goes to the cleanup model.
+    /// formatting; only all-lowercase text without any of `.,?!` goes to the
+    /// cleanup model. A single capital or mark is enough to count as formatted,
+    /// because the model rewrites casing and punctuation of whatever it receives.
+    /// Callers must pass the raw recognised text, not dictionary-adjusted text.
     public static func isFormatted(_ text: String) -> Bool {
-        text.contains(where: { $0.isUppercase }) && text.contains(where: { ".,?!".contains($0) })
+        text.contains(where: { $0.isUppercase || ".,?!".contains($0) })
     }
 
     /// Returns only candidates with exactly the original lexical tokens, in

@@ -1,3 +1,4 @@
+#if DEBUG
 import AVFoundation
 import FluidAudio
 import Foundation
@@ -210,3 +211,4 @@ enum SpeechModelSmoke {
         return row.last ?? reference.count
     }
 }
+#endif

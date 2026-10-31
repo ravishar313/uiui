@@ -42,6 +42,8 @@ public actor LibraryRepository {
         do {
             sqlite3_busy_timeout(connection, 5_000)
             try Self.execute(connection, "PRAGMA foreign_keys = ON")
+            // Deleted notes and drafts must not linger in freed pages.
+            try Self.execute(connection, "PRAGMA secure_delete = ON")
             let version = try Self.schemaVersion(connection)
             guard version <= 1 else { throw RepositoryError.unsupportedSchema(version) }
             try Self.execute(connection, "PRAGMA journal_mode = WAL")
@@ -98,6 +100,15 @@ public actor LibraryRepository {
             try run("DELETE FROM captures_fts WHERE id = ?", text: [id.uuidString])
             try run("DELETE FROM captures WHERE id = ?", text: [id.uuidString])
         }
+        scrubDeletedContent(mergingIndex: true)
+    }
+
+    /// Best effort: the delete is already committed, so a busy reader or failed
+    /// checkpoint must never turn it into an error. FTS5 only tombstones removed
+    /// documents, so merging its segments drops the removed words from the index.
+    private func scrubDeletedContent(mergingIndex: Bool = false) {
+        if mergingIndex { try? Self.execute(database, "INSERT INTO captures_fts(captures_fts) VALUES('optimize')") }
+        try? Self.execute(database, "PRAGMA wal_checkpoint(TRUNCATE)")
     }
 
     public func appendEvent(_ event: UsageEvent) throws {
@@ -153,6 +164,7 @@ public actor LibraryRepository {
                                     closed: true, updatedAt: payload == nil ? Date() : updatedAt)
             try pruneRecordingDrafts()
         }
+        if draft == nil { scrubDeletedContent() }
     }
 
     /// Explicit discard also clears a previously closed recovery, while blocking queued checkpoints.
@@ -163,6 +175,7 @@ public actor LibraryRepository {
                                     closed: true, updatedAt: Date())
             try pruneRecordingDrafts()
         }
+        scrubDeletedContent()
     }
 
     public func loadRecordingDrafts() throws -> [RecordingRecoveryDraft] {
@@ -174,6 +187,7 @@ public actor LibraryRepository {
             try run("UPDATE recording_drafts SET payload = NULL, closed = 1, updated_at = ?", number: Date().timeIntervalSince1970)
             try pruneRecordingDrafts()
         }
+        scrubDeletedContent()
     }
 
     private struct RecordingDraftRow {

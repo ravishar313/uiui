@@ -5,6 +5,27 @@ import Observation
 import Security
 import UIUICore
 
+/// Decides when an update may interrupt the person. While a capture, cleanup or
+/// paste is in flight a found release is held, and handed back exactly once the
+/// next time work is reported idle. Pure state: no timers, no observation.
+struct UpdateInterruptionGate<Release: Equatable> {
+    private(set) var pending: Release?
+
+    /// Returns the release to present now, or nil when it was held.
+    mutating func found(_ release: Release, workInFlight: Bool) -> Release? {
+        guard workInFlight else { pending = nil; return release }
+        pending = release
+        return nil
+    }
+
+    /// Call on every activity change. Returns the held release once idle.
+    mutating func activityChanged(workInFlight: Bool) -> Release? {
+        guard !workInFlight, let release = pending else { return nil }
+        pending = nil
+        return release
+    }
+}
+
 /// Single owner of update side effects: one GitHub release lookup per check,
 /// download, verification, bundle replacement and relaunch. No timers or polling.
 @MainActor @Observable final class AppUpdater {
@@ -20,6 +41,11 @@ import UIUICore
     @ObservationIgnored private let currentVersion: UpdateVersion?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let session: URLSession
+    /// True while a capture, cleanup or paste is in flight. The prompt and the
+    /// relaunch wait for false; the app reports changes via `activityChanged()`.
+    @ObservationIgnored var isWorkInFlight: () -> Bool = { false }
+    @ObservationIgnored private var gate = UpdateInterruptionGate<UpdateRelease>()
+    @ObservationIgnored private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
     private enum Keys {
         static let automatic = "uiui.updates.automatic"
@@ -70,6 +96,22 @@ import UIUICore
 
     // MARK: Checking
 
+    /// Event-driven: the app calls this whenever dictation activity changes.
+    func activityChanged() {
+        guard !isWorkInFlight() else { return }
+        let waiters = idleWaiters
+        idleWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        guard !isBusy, let release = gate.activityChanged(workInFlight: false) else { return }
+        Task { if prompt(release) { await install(release) } }
+    }
+
+    private func waitUntilIdle() async {
+        while isWorkInFlight() {
+            await withCheckedContinuation { idleWaiters.append($0) }
+        }
+    }
+
     func checkOnLaunchIfDue() {
         guard automaticChecks, repository != nil, !isBusy else { return }
         if let last = defaults.object(forKey: Keys.lastCheck) as? Date, Date().timeIntervalSince(last) < 24 * 3600, last <= Date() { return }
@@ -105,7 +147,7 @@ import UIUICore
                 status = "uiui \(release.version) is available."
                 if Self.shouldPrompt(release: release.version, current: currentVersion,
                                      skipped: defaults.string(forKey: Keys.skipped), userInitiated: userInitiated),
-                   prompt(release) {
+                   present(release) {
                     return release
                 }
             } else {
@@ -142,6 +184,15 @@ import UIUICore
     }
 
     // MARK: Prompt
+
+    /// Prompts now, or holds the release until dictation is idle.
+    private func present(_ release: UpdateRelease) -> Bool {
+        guard let ready = gate.found(release, workInFlight: isWorkInFlight()) else {
+            status = "uiui \(release.version) is available. It will ask when dictation is finished."
+            return false
+        }
+        return prompt(ready)
+    }
 
     /// True when the user chose to install now.
     private func prompt(_ release: UpdateRelease) -> Bool {
@@ -198,6 +249,10 @@ import UIUICore
             // Model downloads can take minutes; the staged bundle must still be
             // exactly what was verified when it replaces this app.
             try Self.verifySignature(of: newApp)
+            if isWorkInFlight() {
+                status = "Ready to install uiui \(release.version) once dictation is finished…"
+                await waitUntilIdle()
+            }
             status = "Installing uiui \(release.version)…"
             try Self.replace(target: target, with: newApp, work: work)
             status = "Relaunching…"

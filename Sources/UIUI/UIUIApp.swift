@@ -6,6 +6,9 @@ import UIUICore
 @main
 struct UIUIBootstrap {
     @MainActor static func main() async {
+        // Test and developer commands exist only in debug builds. Release
+        // binaries ignore these flags and always start the app.
+        #if DEBUG
         if let index = CommandLine.arguments.firstIndex(of: "--notch-handoff-preview") {
             guard index + 1 < CommandLine.arguments.count else { print("NOTCH_HANDOFF requires OUTPUT"); exit(2) }
             do {
@@ -33,11 +36,6 @@ struct UIUIBootstrap {
                 try await OptimizationRound1Smoke.runTextCorpus(manifest: URL(fileURLWithPath: CommandLine.arguments[index + 1]), output: URL(fileURLWithPath: CommandLine.arguments[index + 2]))
                 exit(0)
             } catch { print("ROUND1_TEXT failed: \(error.localizedDescription)"); exit(1) }
-        }
-        // Retired experiment commands must fail before opening live app services.
-        if CommandLine.arguments.dropFirst().contains(where: { $0.hasPrefix("--mlx-pilot-") }) {
-            print("MLX_PILOT retired; see docs/experiments for archived results")
-            exit(2)
         }
         if let index = CommandLine.arguments.firstIndex(of: "--local-speech-cancel"), index + 1 < CommandLine.arguments.count {
             do {
@@ -114,10 +112,6 @@ struct UIUIBootstrap {
                 exit(0)
             } catch { print("SPEECH_SMOKE failed: \(error.localizedDescription)"); exit(1) }
         }
-        if CommandLine.arguments.contains("--install-cleanup-model") {
-            print("CLEANUP_ASSETS failed: --install-cleanup-model is retired; MiniLM is included in the app bundle.")
-            exit(1)
-        }
         if CommandLine.arguments.contains("--prepare-speech") {
             let locale: String
             if let index = CommandLine.arguments.firstIndex(of: "--speech-locale"), index + 1 < CommandLine.arguments.count {
@@ -126,11 +120,7 @@ struct UIUIBootstrap {
             do { try await SpeechAssets.prepare(localeIdentifier: locale); exit(0) }
             catch { print("SPEECH_ASSETS failed: \(error.localizedDescription)"); exit(1) }
         }
-        let retiredCommands: Set<String> = ["--render-notch-states", "--render-notch-animation", "--render-paste-preview", "--render-paste-animation", "--render-agent-preview", "--reminder-smoke", "--pi-smoke"]
-        if CommandLine.arguments.dropFirst().contains(where: { retiredCommands.contains($0) }) {
-            print("This command has been retired.")
-            exit(2)
-        }
+        #endif
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -138,6 +128,7 @@ struct UIUIBootstrap {
         withExtendedLifetime(delegate) { app.run() }
     }
 
+    #if DEBUG
     private static var integrationDiagnostics: Bool {
         CommandLine.arguments.contains("--integration-diagnostics")
     }
@@ -152,6 +143,7 @@ struct UIUIBootstrap {
         guard size <= 65_536 else { throw CleanupFailure.unavailable }
         return Array(try JSONDecoder().decode([String].self, from: Data(contentsOf: url)).prefix(100))
     }
+    #endif
 }
 
 @MainActor
@@ -174,6 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onOpenOnboarding = { [weak panels] in panels?.openOnboarding() }
         model.onNotchPreviewChanged = { [weak panels] active in panels?.setNotchStylePreview(active) }
         model.updater = updater
+        updater.isWorkInFlight = { [weak model] in model?.isDictationWorkInFlight ?? false }
         model.onSettingsChanged = { [weak self, weak panels] in
             panels?.updateNotch()
             self?.configureVoiceTrigger()
@@ -183,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.model.resumeQueuedVoiceCaptureIfReady()
             panels?.activityChanged()
             self?.refreshEscapeCancellation()
+            self?.updater.activityChanged()
         }
         shortcuts.onVoicePressed = { [weak model] in model?.voiceTriggerPressed() }
         shortcuts.onVoiceReleased = { [weak model] in model?.voiceTriggerReleased() }

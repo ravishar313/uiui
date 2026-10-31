@@ -178,7 +178,8 @@ extension AppModel {
     func receiveVoicePartial(_ text: String) {
         checkpointTriggeredRecordingRecovery(text)
         if voiceInputKind == .dictation, LocalSpeechModel.supports(locale: settings.speechLocale) {
-            cleanup.update(dictationWords(text), captureID: dictationCaptureGeneration)
+            cleanup.update(dictationWords(text), captureID: dictationCaptureGeneration,
+                           formatted: DictationCleanupText.isFormatted(text))
         }
         if !text.isEmpty, !voiceFirstPartialSeen, let start = voiceRequestedAt {
             voiceFirstPartialSeen = true
@@ -248,7 +249,8 @@ extension AppModel {
             let cleanedText: String
             do {
                 if inputKind == .dictation, !isRetry, LocalSpeechModel.supports(locale: settings.speechLocale) {
-                    cleanedText = try await cleanup.finish(vocabularyText, captureID: captureID)
+                    cleanedText = try await cleanup.finish(vocabularyText, captureID: captureID,
+                                                           formatted: DictationCleanupText.isFormatted(input))
                 } else { cleanedText = fallback }
             } catch {
                 if captureID == dictationCaptureGeneration { finishTriggeredRecordingRecovery(id: recoveryID, preserving: true) }

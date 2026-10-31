@@ -43,6 +43,30 @@ final class DictationCleanupTests: XCTestCase {
     }
 
     @MainActor
+    func testExplicitFormattedDecisionOverridesTextShapeAndIsCapturedBeforeDictionary() async throws {
+        // The dictionary capitalised an entry in already-lowercase raw speech:
+        // the caller decided on the raw text (unformatted), so the model runs.
+        let engine = ControlledCleanupEngine()
+        let cleanup = DictationCleanup(engine: engine, finalBudget: .seconds(2))
+        let id = UUID()
+        cleanup.begin(id)
+        _ = try await cleanup.finish("send it to Priya", captureID: id, formatted: false)
+        XCTAssertEqual(engine.inputs, ["send it to Priya"])
+
+        // Raw text was formatted: the model is skipped even if the text looks bare.
+        let skipped = ControlledCleanupEngine()
+        let second = DictationCleanup(engine: skipped, finalBudget: .seconds(2))
+        let result = try await second.finish("send it to priya", captureID: UUID(), formatted: true)
+        XCTAssertTrue(skipped.inputs.isEmpty)
+        XCTAssertEqual(result, DictationPunctuation.finalize("send it to priya"))
+
+        // Direct callers without a decision derive it from the text: one capital is enough.
+        let direct = ControlledCleanupEngine()
+        _ = try await DictationCleanup(engine: direct, finalBudget: .seconds(2)).finish("Send it to priya", captureID: UUID())
+        XCTAssertTrue(direct.inputs.isEmpty)
+    }
+
+    @MainActor
     func testFinalDeadlineReturnsEveryOriginalChunkWithoutStartingInference() async throws {
         let engine = ControlledCleanupEngine()
         let cleanup = DictationCleanup(engine: engine, finalBudget: .zero)

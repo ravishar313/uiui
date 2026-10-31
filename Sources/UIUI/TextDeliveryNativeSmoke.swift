@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import ApplicationServices
 import Darwin
@@ -546,3 +547,4 @@ enum TextDeliveryNativeSmoke {
         }
     }
 }
+#endif

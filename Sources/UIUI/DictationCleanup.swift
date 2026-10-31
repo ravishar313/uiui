@@ -22,6 +22,10 @@ protocol DictationCleaning: AnyObject {
     func begin(_ id: UUID)
     func update(_ text: String, captureID: UUID)
     func finish(_ text: String, captureID: UUID) async throws -> String
+    /// `formatted` is the caller's decision, made on the raw recognised text
+    /// before dictionary or commands. nil means derive it from `text`.
+    func update(_ text: String, captureID: UUID, formatted: Bool?)
+    func finish(_ text: String, captureID: UUID, formatted: Bool?) async throws -> String
     func cancel()
     func release()
     func shutdown() async
@@ -29,6 +33,10 @@ protocol DictationCleaning: AnyObject {
 
 extension DictationCleaning {
     func shutdown() async { release() }
+    func update(_ text: String, captureID: UUID, formatted: Bool?) { update(text, captureID: captureID) }
+    func finish(_ text: String, captureID: UUID, formatted: Bool?) async throws -> String {
+        try await finish(text, captureID: captureID)
+    }
 }
 
 /// Event-driven prefix work amortizes long dictations while the person speaks.
@@ -55,6 +63,7 @@ final class DictationCleanup: DictationCleaning {
     private var stableTailID: UUID?
     private var tailIsStable = false
     private var transcript: String?
+    private var transcriptFormatted: Bool?
     private var finishingCaptureID: UUID?
     private var finalCancellation: CleanupCancellation?
     private var warmup: Task<Void, Never>?
@@ -83,7 +92,12 @@ final class DictationCleanup: DictationCleaning {
     }
 
     func update(_ text: String, captureID id: UUID) {
+        update(text, captureID: id, formatted: nil)
+    }
+
+    func update(_ text: String, captureID id: UUID, formatted: Bool?) {
         guard captureID == id, finishingCaptureID != id else { return }
+        transcriptFormatted = formatted
         if transcript != text {
             transcript = text
             segments = DictationCleanupText.segments(for: text, maximumUTF8Bytes: 450)
@@ -110,7 +124,7 @@ final class DictationCleanup: DictationCleaning {
 
     private func startBackground(captureID id: UUID) {
         guard engine.isReady, background == nil, captureID == id, finishingCaptureID != id,
-              !DictationCleanupText.isFormatted(transcript ?? "") else { return }
+              !(transcriptFormatted ?? DictationCleanupText.isFormatted(transcript ?? "")) else { return }
         let jobID = UUID(); backgroundID = jobID
         background = Task { [weak self] in
             guard let self else { return }
@@ -137,6 +151,10 @@ final class DictationCleanup: DictationCleaning {
     }
 
     func finish(_ text: String, captureID id: UUID) async throws -> String {
+        try await finish(text, captureID: id, formatted: nil)
+    }
+
+    func finish(_ text: String, captureID id: UUID, formatted: Bool?) async throws -> String {
         try Task.checkCancellation()
         // Direct/manual typing has no preceding stream. The application checks
         // its generation before calling; this creates only that capture's cache.
@@ -150,10 +168,10 @@ final class DictationCleanup: DictationCleaning {
         defer {
             if captureID == id {
                 finalCancellation = nil; finishingCaptureID = nil
-                cache.removeAll(); segments.removeAll(); transcript = nil
+                cache.removeAll(); segments.removeAll(); transcript = nil; transcriptFormatted = nil
             }
         }
-        if DictationCleanupText.isFormatted(text) {
+        if formatted ?? DictationCleanupText.isFormatted(text) {
             stopBackground()
             return DictationPunctuation.finalize(text)
         }
@@ -207,7 +225,7 @@ final class DictationCleanup: DictationCleaning {
     func cancel() {
         // This is synchronous even if Metal is completing a kernel. The caller
         // immediately invalidates delivery; native work checks at each decode.
-        captureID = nil; finishingCaptureID = nil; transcript = nil; tailIsStable = false
+        captureID = nil; finishingCaptureID = nil; transcript = nil; transcriptFormatted = nil; tailIsStable = false
         stopStableTail()
         stopBackground()
         finalCancellation?.cancel(); finalCancellation = nil

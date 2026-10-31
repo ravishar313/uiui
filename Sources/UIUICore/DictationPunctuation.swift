@@ -21,7 +21,11 @@ public enum DictationPunctuation {
             return String(transcript[..<last]) + "?" + transcript[end...]
         }
         guard terminal.isLetter || terminal.isNumber else { return transcript }
-        let punctuation = isDirectQuestion(finalSentence(in: body)) ? "?" : "."
+        let isQuestion = isDirectQuestion(finalSentence(in: body))
+        // One or two words ("Okay", "Thanks Priya") read as fragments or
+        // replies; a final mark there is more often wrong than right.
+        guard isQuestion || body.split(whereSeparator: \.isWhitespace).count >= 3 else { return transcript }
+        let punctuation = isQuestion ? "?" : "."
         return String(transcript[..<end]) + punctuation + transcript[end...]
     }
 

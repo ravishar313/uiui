@@ -37,9 +37,9 @@ Larger models still win on pure Hindi and clearly read English. The [technical r
 |---|---|---|
 | **uiui S1** | Speech to text, with punctuation and casing. Built from [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) through Fermion Research's [Phonon-2](https://huggingface.co/FermionResearch/Phonon-2) | Core ML, Neural Engine and CPU, macOS 15+ |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | Trims non-speech tails | Core ML, CPU |
-| **uiui P1** | Adds punctuation and casing only when the text has none. Built from [punctuator-multilingual-minilm-v2](https://huggingface.co/ldenoue/punctuator-multilingual-minilm-v2) | ONNX Runtime, CPU |
+| **uiui P1** | Adds punctuation and casing only to speech that arrives all lowercase with no `.,?!`. Built from [punctuator-multilingual-minilm-v2](https://huggingface.co/ldenoue/punctuator-multilingual-minilm-v2) | ONNX Runtime, CPU |
 
-macOS 14 falls back to a Parakeet path, and other languages use Apple's on-device speech. Output that's already formatted skips the cleanup model.
+macOS 14 falls back to a Parakeet path, and other languages use Apple's on-device speech. Any capital letter or `.,?!` in the recognised text counts as formatted and skips the cleanup model; your dictionary does not change that decision.
 
 ## Build
 

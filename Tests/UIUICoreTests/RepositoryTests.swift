@@ -80,4 +80,37 @@ final class RepositoryTests: XCTestCase {
         XCTAssertEqual(Set(loaded), Set(items))
         XCTAssertEqual(Set(found.map(\.id)), Set(items.map(\.id)))
     }
+
+    private func fileBytes(_ url: URL) -> Data {
+        var combined = Data()
+        for suffix in ["", "-wal"] { combined += (try? Data(contentsOf: URL(fileURLWithPath: url.path + suffix))) ?? Data() }
+        return combined
+    }
+
+    func testDeletedHistoryTextLeavesNoBytesInDatabaseOrWal() async throws {
+        let url = try location()
+        let repository = try LibraryRepository(url: url)
+        let secret = "zqxjvkunique" + UUID().uuidString.lowercased().filter(\.isLetter)
+        let item = CaptureItem(title: "Note", body: "before \(secret) after", kind: .dictation, project: "P", rawText: "raw \(secret)")
+        try await repository.upsert(item)
+        try await repository.upsert(CaptureItem(title: "Keep", body: "other text"))
+        XCTAssertNotNil(fileBytes(url).range(of: Data(secret.utf8)), "precondition: text was written")
+        try await repository.delete(id: item.id)
+        XCTAssertNil(fileBytes(url).range(of: Data(secret.utf8)))
+        let remaining = try await repository.loadItems()
+        XCTAssertEqual(remaining.count, 1)
+    }
+
+    func testDiscardedDraftTextLeavesNoBytesInDatabaseOrWal() async throws {
+        let url = try location()
+        let repository = try LibraryRepository(url: url)
+        let secret = "ghtwpqdraft" + UUID().uuidString.lowercased().filter(\.isLetter)
+        let id = UUID()
+        try await repository.checkpointRecordingDraft(RecordingRecoveryDraft(
+            id: id, text: secret, project: "P", kind: .dictation,
+            startedAt: Date(timeIntervalSince1970: 1), updatedAt: Date(timeIntervalSince1970: 2), revision: 1))
+        XCTAssertNotNil(fileBytes(url).range(of: Data(secret.utf8)), "precondition: text was written")
+        try await repository.discardRecordingDraft(id: id)
+        XCTAssertNil(fileBytes(url).range(of: Data(secret.utf8)))
+    }
 }

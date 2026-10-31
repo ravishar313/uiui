@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import AVFoundation
 import CryptoKit
@@ -437,3 +438,4 @@ private enum Round1RecognitionMessage: Sendable {
     case recognition(SpeechRecognitionEvent)
     case stopped
 }
+#endif

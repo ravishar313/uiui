@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import ImageIO
 import SwiftUI
@@ -429,3 +430,4 @@ enum NotchHandoffNativeSmoke {
         func cancel() {}
     }
 }
+#endif

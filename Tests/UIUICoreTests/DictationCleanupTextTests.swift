@@ -125,4 +125,13 @@ final class DictationCleanupTextTests: XCTestCase {
         XCTAssertNil(DictationCleanupText.accepted("Hello" + String(repeating: "!", count: 1_000), for: "hello"))
         XCTAssertNil(DictationCleanupText.accepted("...", for: "..."))
     }
+
+    func testAnyCapitalOrMarkMakesTextFormattedAndOnlyBareLowercaseGoesToTheModel() {
+        for text in ["Send it to Priya", "send it to Priya", "send it, please", "is it ready?", "go now.", "wow!", "ÉLÈVE"] {
+            XCTAssertTrue(DictationCleanupText.isFormatted(text), text)
+        }
+        for text in ["send it to priya", "kal rahul se baat karo", "", "123 456"] {
+            XCTAssertFalse(DictationCleanupText.isFormatted(text), text)
+        }
+    }
 }

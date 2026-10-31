@@ -32,6 +32,7 @@ enum LocalCleanupModel {
         }
     }
 
+    #if DEBUG
     /// Explicit developer check of the signed bundle's selected assets/runtime.
     /// It runs before application setup and never opens audio or user storage.
     static func smoke() async throws {
@@ -50,4 +51,5 @@ enum LocalCleanupModel {
             throw error
         }
     }
+    #endif
 }
