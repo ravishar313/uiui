@@ -1,0 +1,18 @@
+# Build output
+.build/
+build/
+.smoke-data/
+.DS_Store
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Signing material stays on the build machine
+.local-signing/
+
+# Model weights are distributed as release packs (docs/updates.md); manifests stay tracked
+resources/Phonon/Phonon-2.mlmodelc/
+resources/Phonon/SpeechActivity.mlmodelc/
+resources/Phonon/decoder.bin
+resources/MiniLM/*.onnx
+model-sources/

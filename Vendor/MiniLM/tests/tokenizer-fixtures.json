@@ -1,0 +1,9 @@
+{
+  "source": "Authored public synthetic lexical fixtures; no user text.",
+  "generator": "Hugging Face tokenizers.Tokenizer.encode(add_special_tokens=False); no_truncation/no_padding",
+  "tokenizer_revision": "970138a82387e72360e9e3591cd5237a9f47ec5c",
+  "tokenizer_json_sha256": "df45d9da01151c111d5ccdc39ac4ae51899197879f295db0bd521136af468ca5",
+  "fixture_count": 33,
+  "fixture_sha256": "005e46e7652ae5a72a2c8374d80031577dae3e3aa8b6422df01dc4bc233b040c",
+  "scope": "Tokenizer parity only; no model session or inference."
+}

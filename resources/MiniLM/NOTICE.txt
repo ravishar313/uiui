@@ -1,0 +1,8 @@
+uiui locally adapted punctuation and capitalization model.
+Base: ldenoue/punctuator-multilingual-minilm-v2, revision 970138a82387e72360e9e3591cd5237a9f47ec5c.
+Publisher model card declares MIT. See MODEL-CARD.md for provenance and source-data declarations.
+Local adaptation: classifier then last two encoder layers; dynamic per-channel INT8 MatMul and quantized embedding Gather.
+Training: 5,500 public Sotto/OASST2 examples; 750 development and 1,000 heldout rows kept separate.
+No personal audio, dictation history, corrections or credentials were used.
+Dataset cards and revision pins are included; raw training rows and training tools are not bundled.
+Native ONNX Runtime and SentencePiece notices are in MiniLM-Runtime-Licenses.

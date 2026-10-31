@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "engine": "MiniLM-native-ORT-CPU",
+  "selection": "uiui-hinglish-ft3-all-perchannel-int8",
+  "base_repository": "ldenoue/punctuator-multilingual-minilm-v2",
+  "base_revision": "970138a82387e72360e9e3591cd5237a9f47ec5c",
+  "data_manifest_sha256": "9bb79d0602bf397bbac7114b71385c937f09d4251e60e2cc8bec67687a17a5d5",
+  "files": [
+    {
+      "path": "model.int8.onnx",
+      "bytes": 34579867,
+      "sha256": "30d83a02e17af32e1d80811f6c993513740d02d80073ecb98c550f85a3aac917"
+    },
+    {
+      "path": "sentencepiece.bpe.model",
+      "bytes": 782148,
+      "sha256": "c450dfa5221ee4bf8c2a84193b2dcaea888f3a30b26cd234e66e7a76c4eaa575"
+    }
+  ]
+}

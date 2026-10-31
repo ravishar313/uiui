@@ -1,0 +1,3 @@
+Silero VAD v6.2.1, converted to Core ML by Fluid Inference.
+Source: https://huggingface.co/FluidInference/silero-vad-coreml/tree/b419383c55c110e2c9271fa6ee0ea83d03c70d96
+MIT license. Used unchanged; uiui adds a local CPU inference adapter and speech admission policy.
