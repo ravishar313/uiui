@@ -192,7 +192,7 @@ actor ParakeetModelPool {
         pool = ReadySpeechModelPool(factory: {
             ParakeetSpeechModel.configureLibraryLogging()
             guard ParakeetSpeechModel.isInstalled else {
-                throw SpeechCaptureFailure.message("Prepare the Parakeet Unified English model in Settings before recording.")
+                throw SpeechCaptureFailure.message("Download the speech model in Settings before recording.")
             }
             let manager = StreamingUnifiedAsrManager(config: ParakeetSpeechModel.config, encoderPrecision: .int8)
             do {

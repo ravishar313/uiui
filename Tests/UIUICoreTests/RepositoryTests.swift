@@ -114,3 +114,34 @@ final class RepositoryTests: XCTestCase {
         XCTAssertNil(fileBytes(url).range(of: Data(secret.utf8)))
     }
 }
+
+final class RepositoryDeleteAllTests: XCTestCase {
+    func testDeleteAllContentRemovesEverythingAndLeavesNoReadableText() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("library.sqlite")
+        let repository = try LibraryRepository(url: url)
+        let marker = "zanzibarquokka"
+        try await repository.upsert(CaptureItem(title: "Note", body: "Send the \(marker) deck", kind: .dictation))
+        try await repository.appendEvent(UsageEvent(action: "dictation", wordCount: 5))
+        try await repository.checkpointRecordingDraft(RecordingRecoveryDraft(
+            id: UUID(), text: "draft \(marker)", project: "Personal", kind: .dictation,
+            startedAt: Date(), updatedAt: Date(), revision: 1))
+        try await repository.deleteAllContent()
+        let items = try await repository.loadItems()
+        let events = try await repository.loadEvents(since: .distantPast)
+        let drafts = try await repository.loadRecordingDrafts()
+        let found = try await repository.search(marker)
+        XCTAssertTrue(items.isEmpty); XCTAssertTrue(events.isEmpty)
+        XCTAssertTrue(drafts.isEmpty); XCTAssertTrue(found.isEmpty)
+        for name in ["library.sqlite", "library.sqlite-wal"] {
+            let file = directory.appendingPathComponent(name)
+            guard let data = try? Data(contentsOf: file) else { continue }
+            XCTAssertNil(data.range(of: Data(marker.utf8)), "\(name) still holds deleted text")
+        }
+        try await repository.upsert(CaptureItem(title: "After", body: "fresh"))
+        let again = try await repository.loadItems()
+        XCTAssertEqual(again.count, 1)
+    }
+}

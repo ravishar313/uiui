@@ -213,7 +213,7 @@ struct SpeechModelSessionDescriptor: Sendable {
         directory: ParakeetSpeechModel.directory,
         isInstalled: { ParakeetSpeechModel.isInstalled },
         modelDescription: ParakeetSpeechModel.modelDescription,
-        setupMessage: "Prepare the Parakeet Unified English model in Settings before recording. Model downloads happen only when you choose Prepare Speech.")
+        setupMessage: "Download the speech model in Settings before recording. Models download only when you choose Download speech model.")
 }
 
 final class ParakeetSpeechAudioSession: SpeechAudioSession, @unchecked Sendable {

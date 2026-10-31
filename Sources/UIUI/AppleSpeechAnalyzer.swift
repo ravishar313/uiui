@@ -20,7 +20,7 @@ final class NativeSpeechAudioSession: SpeechAudioSession, @unchecked Sendable {
             if #available(macOS 15.0, *) {
                 descriptor = SpeechModelSessionDescriptor(directory: PhononSpeechModel.directory,
                     isInstalled: { PhononSpeechModel.isInstalled }, modelDescription: PhononSpeechModel.modelDescription,
-                    setupMessage: "uiui’s local Phonon model is missing. Reinstall the complete app bundle.")
+                    setupMessage: "uiui’s speech model (uiui S1) is missing. Reinstall the complete app bundle.")
             } else { descriptor = .parakeet }
             let parakeet = ParakeetSpeechAudioSession(configuration: configuration, decoder: LocalSpeechModel.makeDecoder(vocabulary: configuration.vocabulary), descriptor: descriptor)
             do { try await parakeet.prepare(lease: lease) }
@@ -35,7 +35,7 @@ final class NativeSpeechAudioSession: SpeechAudioSession, @unchecked Sendable {
                 catch { modern.cancel(); throw error }
                 selection = (modern, modern.engineStatus)
             } else {
-                throw SpeechCaptureFailure.message("Download the on-device long-form speech model for this language using Prepare Speech in Settings, then try again. No audio was captured or sent to a server.")
+                throw SpeechCaptureFailure.message("Download the on-device long-form speech model for this language using Download speech model in Settings, then try again. No audio was captured or sent to a server.")
             }
         } else {
             selection = (try LegacySpeechAudioSession(configuration: configuration),

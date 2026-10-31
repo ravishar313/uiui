@@ -350,8 +350,9 @@ final class AppModel {
     }
 
     private func playRecordingSound(_ cue: RecordingSound) {
-        guard systemServicesEnabled, settings.soundFeedbackEnabled else { return }
-        recordingSounds.play(cue)
+        guard systemServicesEnabled else { return }
+        if settings.soundFeedbackEnabled { recordingSounds.play(cue) }
+        if settings.trackpadFeedbackEnabled { recordingSounds.tap(cue) }
     }
 
     func openHome() { onOpenHome?() }

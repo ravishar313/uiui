@@ -10,7 +10,7 @@ final class LocalSpeechModelTests: XCTestCase {
             XCTAssertTrue(LocalSpeechModel.makeDecoder() is PhononStreamingDecoder)
             XCTAssertEqual(LocalSpeechModel.directory, PhononSpeechModel.directory)
             XCTAssertEqual(LocalCleanupModel.name, "MiniLM")
-            XCTAssertTrue(LocalCleanupModel.speechSummary.contains("Phonon 2"))
+            XCTAssertTrue(LocalCleanupModel.speechSummary.contains("uiui S1"))
             let options = PhononSpeechModel.makeOptions()
             XCTAssertEqual(options.functions, [15])
             XCTAssertEqual(options.eagerFunctions, [15])

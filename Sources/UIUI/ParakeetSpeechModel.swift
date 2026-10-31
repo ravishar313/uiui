@@ -6,7 +6,7 @@ import Foundation
 enum ParakeetSpeechModel {
     static let repository = "FluidInference/parakeet-unified-en-0.6b-coreml"
     static let revision = "d32e972dd4315f1dc3f6be28fb2aab0ab3e80358"
-    static let modelDescription = "Parakeet Unified · English · on device"
+    static let modelDescription = "Speech model for macOS 14 · English · on device"
     static let latencyMilliseconds = 1120
     static let encoderFileName = "parakeet_unified_encoder_streaming_70_7_7_int8.mlmodelc"
     static let downloadVariant = "streaming"

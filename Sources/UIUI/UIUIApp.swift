@@ -16,6 +16,14 @@ struct UIUIBootstrap {
                 exit(0)
             } catch { print("APP_PREVIEW failed: \(error.localizedDescription)"); exit(1) }
         }
+        if let index = CommandLine.arguments.firstIndex(of: "--settings-preview") {
+            guard index + 1 < CommandLine.arguments.count else { print("SETTINGS_PREVIEW requires OUTPUT"); exit(2) }
+            do {
+                NSApplication.shared.setActivationPolicy(.accessory)
+                try await SettingsNativeSmoke.run(output: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+                exit(0)
+            } catch { print("SETTINGS_PREVIEW failed: \(error.localizedDescription)"); exit(1) }
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--notch-handoff-preview") {
             guard index + 1 < CommandLine.arguments.count else { print("NOTCH_HANDOFF requires OUTPUT"); exit(2) }
             do {
