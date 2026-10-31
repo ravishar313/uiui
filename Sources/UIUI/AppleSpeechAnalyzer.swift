@@ -182,7 +182,8 @@ struct SpeechAnalyzerTranscriptState {
 @available(macOS 26.0, *)
 final class AppleSpeechAnalyzerSession: SpeechAudioSession, @unchecked Sendable {
     let engineStatus = SpeechEngineStatus(description: "Apple on-device long-form speech", warning: nil,
-                                           finalizationWaitMilliseconds: 8000, requiresCompleteFinalization: true)
+                                           finalizationWaitMilliseconds: 8000, requiresCompleteFinalization: true,
+                                           supportsPause: true)
     private let configuration: SpeechAudioConfiguration
     private let transcriber: SpeechTranscriber
     private let analyzer: SpeechAnalyzer

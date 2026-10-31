@@ -264,6 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSettings: { [weak self] in self?.model.openSettings() },
             openSetupGuide: { [weak self] in self?.model.openOnboarding() },
             checkForUpdates: { [weak self] in self?.updater.checkNow() },
+            reviewUpdate: { [weak self] in self?.updater.presentPendingUpdate() },
             quit: { NSApplication.shared.terminate(nil) }))
     }
     private func configureVoiceTrigger() {

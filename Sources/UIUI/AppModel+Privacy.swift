@@ -14,14 +14,27 @@ extension AppModel {
         recordingRecovery.discardAll()
         await recordingRecovery.flush()
         do { try await repository.deleteAllContent() }
-        catch { return "Couldn’t delete everything: \(error.localizedDescription) Nothing else was changed." }
+        catch {
+            // The drafts are already gone and cannot be put back, so say exactly that.
+            return "Recovery drafts were discarded, but saved history and the dictionary could not be deleted: \(error.localizedDescription) Nothing else was changed. Try again."
+        }
         settings.vocabulary = []
         searchText = ""
         selectedItemID = nil
         explicitlyOpenedRecoveryDraftID = nil
         composerRecoveryDraftID = nil
+        // Home, the menu and the notch read these; none may keep showing deleted text.
+        lastTypedText = ""
+        captureText = ""
+        voice.discardHeldText()
+        dictationFeedback = nil
+        dictationDeliveryIssue = nil
+        manualVoiceIssue = nil
+        notchExtras.clearUndo()
+        wordFixStacks = [:]
         await reload()
         statusMessage = "Deleted history, drafts and dictionary."
+        onActivityChanged?()
         return "Deleted history, recovery drafts and dictionary words."
     }
 }

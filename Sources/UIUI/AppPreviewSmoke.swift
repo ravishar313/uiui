@@ -44,7 +44,7 @@ enum AppPreviewSmoke {
             item("Thanks for the update. I will review the draft this afternoon and send comments before the end of the day.", ago(18), slack),
             item("Reminder to self: book the venue for the offsite and ask the team for dietary preferences.", ago(140), notes),
             item("Hi Priya, the quarterly summary is attached. Please let me know if any of the figures need another look.", ago(300), mail),
-            item("Can we move the review to Thursday morning? Zelda is out on Wednesday.", ago(60 * 27), slack),
+            item("Can we move the review to Thursday morning? Karan is out on Wednesday.", ago(60 * 27), slack),
             item("Refactor the settings view so the shortcut recorder owns its own state.", ago(60 * 30), xcode),
             item("Draft opening line: small tools that stay out of the way are the ones people keep.", ago(60 * 24 * 4), notes),
             item("A short thought with no destination app recorded.", ago(60 * 24 * 12), nil),
@@ -65,13 +65,14 @@ enum AppPreviewSmoke {
         await model.reload()
 
         // The real fix flow against the isolated library.
-        let target = model.items.first { $0.body.contains("Zelda") }
+        let target = model.items.first { $0.body.contains("Karan") }
         var fix: HistoryWordFix?
-        if let target, case .fixed(let applied) = await model.fixWord(in: target, heard: "Zelda,", correction: "Zelta") { fix = applied }
+        if let target, let range = Optional((target.body as NSString).range(of: "Karan")), range.location != NSNotFound,
+           case .fixed(let applied) = await model.fixWord(in: target, wordRange: range, heard: "Karan", correction: "Kiran") { fix = applied }
         guard let fix else { throw Failure.failed("The word fix did not apply.") }
-        guard model.settings.vocabulary.contains(where: { $0.heard == "zelda" && $0.replacement == "Zelta" }),
-              model.items.first(where: { $0.id == fix.after.id })?.body.contains("Zelta") == true,
-              model.items.first(where: { $0.id == fix.after.id })?.rawText?.contains("Zelda") == true else {
+        guard model.settings.vocabulary.contains(where: { $0.heard == "karan" && $0.replacement == "Kiran" }),
+              model.items.first(where: { $0.id == fix.after.id })?.body.contains("Kiran") == true,
+              model.items.first(where: { $0.id == fix.after.id })?.rawText?.contains("Karan") == true else {
             throw Failure.failed("The word fix was not stored.")
         }
         let fixedItem = model.items.first { $0.id == fix.after.id } ?? fix.after
@@ -85,9 +86,9 @@ enum AppPreviewSmoke {
             try save(render(SavedTextView(model: model, item: fixedItem, startsInFixMode: true, previousFix: fix)
                 .background(UIUIStyle.paper(name == "dark" ? .dark : .light)),
                             size: CGSize(width: 780, height: 460), appearance: appearance), output, "fix-word-\(name)")
-            try save(render(FixWordForm(word: "Zelda", onCancel: {}, onSubmit: { _ in nil })
+            try save(render(FixWordForm(word: "Karan", otherMatches: 2, onCancel: {}, onSubmit: { _, _, _ in nil })
                 .background(UIUIStyle.paper(name == "dark" ? .dark : .light)),
-                            size: CGSize(width: 268, height: 180), appearance: appearance), output, "fix-word-popover-\(name)")
+                            size: CGSize(width: 268, height: 300), appearance: appearance), output, "fix-word-popover-\(name)")
             try save(render(RecordingRecoveryReview(model: model, onDone: {}), size: CGSize(width: 540, height: 440), appearance: appearance), output, "recovery-review-\(name)")
         }
 

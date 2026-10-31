@@ -59,11 +59,11 @@ final class PhononVocabularySessionTests: XCTestCase {
 
     func testDecoderKeepsAnImmutableBoundedSnapshotWithoutChangingSpellings() async throws {
         guard #available(macOS 15.0, *) else { return }
-        var words = ["Muesli", "Lauki", "", String(repeating: "x", count: 257)]
+        var words = ["Muesli", "Kiran", "", String(repeating: "x", count: 257)]
         let decoder = try XCTUnwrap(LocalSpeechModel.makeDecoder(vocabulary: words) as? PhononStreamingDecoder)
         words[0] = "ChangedAfterCapture"
         let snapshot = await decoder.vocabulary
-        XCTAssertEqual(snapshot, ["Muesli", "Lauki"])
+        XCTAssertEqual(snapshot, ["Muesli", "Kiran"])
         let many = PhononStreamingDecoder(vocabulary: Array(repeating: "word", count: 101))
         let count = await many.vocabulary.count
         XCTAssertEqual(count, 100)

@@ -5,26 +5,25 @@ import Observation
 import Security
 import UIUICore
 
-/// Decides when an update may interrupt the person. While a capture, cleanup or
-/// paste is in flight a found release is held, and handed back exactly once the
-/// next time work is reported idle. Pure state: no timers, no observation.
-struct UpdateInterruptionGate<Release: Equatable> {
-    private(set) var pending: Release?
+/// What a found release is allowed to do. An update never opens a window or takes
+/// focus because dictation went idle: only a person's own choice (Check for Updates,
+/// the menu item, or Settings) opens the prompt, and never while dictation is in flight.
+/// Pure: no timers, no observation.
+enum UpdatePresentation: Equatable {
+    /// Open the prompt now: the person asked for it and nothing is in flight.
+    case promptNow
+    /// Show the quiet indication (menu item, Home, Settings); no window.
+    case indicate
 
-    /// Returns the release to present now, or nil when it was held.
-    mutating func found(_ release: Release, workInFlight: Bool) -> Release? {
-        guard workInFlight else { pending = nil; return release }
-        pending = release
-        return nil
+    static func forFoundRelease(userInitiated: Bool, workInFlight: Bool) -> UpdatePresentation {
+        userInitiated && !workInFlight ? .promptNow : .indicate
     }
 
-    /// Call on every activity change. Returns the held release once idle.
-    mutating func activityChanged(workInFlight: Bool) -> Release? {
-        guard !workInFlight, let release = pending else { return nil }
-        pending = nil
-        return release
-    }
+    /// Whether a modal alert may be shown at all right now.
+    static func mayShowModal(workInFlight: Bool) -> Bool { !workInFlight }
 }
+
+enum UpdatePromptChoice: Equatable { case install, later, skip }
 
 /// Single owner of update side effects: one GitHub release lookup per check,
 /// download, verification, bundle replacement and relaunch. No timers or polling.
@@ -32,6 +31,9 @@ struct UpdateInterruptionGate<Release: Equatable> {
     private(set) var status: String
     private(set) var isBusy = false
     private(set) var available: UpdateRelease?
+    /// A found release that the menu and the app mention quietly until the person
+    /// reviews it. Cleared when they skip it or start installing.
+    private(set) var pendingNotice: UpdateRelease?
     var automaticChecks: Bool {
         didSet { defaults.set(automaticChecks, forKey: Keys.automatic) }
     }
@@ -44,7 +46,10 @@ struct UpdateInterruptionGate<Release: Equatable> {
     /// True while a capture, cleanup or paste is in flight. The prompt and the
     /// relaunch wait for false; the app reports changes via `activityChanged()`.
     @ObservationIgnored var isWorkInFlight: () -> Bool = { false }
-    @ObservationIgnored private var gate = UpdateInterruptionGate<UpdateRelease>()
+    /// Show the prompt and return the choice. Replaceable so tests never open a window.
+    @ObservationIgnored var promptUser: @MainActor (UpdateRelease, String) -> UpdatePromptChoice = AppUpdater.runPrompt
+    /// Show a plain alert. Replaceable so tests never open a window.
+    @ObservationIgnored var showNotice: @MainActor (String, String) -> Void = AppUpdater.runAlert
     @ObservationIgnored private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
     private enum Keys {
@@ -96,14 +101,13 @@ struct UpdateInterruptionGate<Release: Equatable> {
 
     // MARK: Checking
 
-    /// Event-driven: the app calls this whenever dictation activity changes.
+    /// Event-driven: the app calls this whenever dictation activity changes. It only
+    /// releases an install that was waiting for idle; it never opens a prompt.
     func activityChanged() {
         guard !isWorkInFlight() else { return }
         let waiters = idleWaiters
         idleWaiters.removeAll()
         waiters.forEach { $0.resume() }
-        guard !isBusy, let release = gate.activityChanged(workInFlight: false) else { return }
-        Task { if prompt(release) { await install(release) } }
     }
 
     private func waitUntilIdle() async {
@@ -128,9 +132,20 @@ struct UpdateInterruptionGate<Release: Equatable> {
         Task { await install(release) }
     }
 
+    /// The person chose the quiet indication: open the prompt now, unless dictation is
+    /// in flight, when it waits for them to choose again.
+    func presentPendingUpdate() {
+        guard !isBusy, let release = pendingNotice ?? available else { return }
+        guard UpdatePresentation.mayShowModal(workInFlight: isWorkInFlight()) else {
+            status = "uiui \(release.version) is available. Choose it again when dictation is finished."
+            return
+        }
+        Task { if prompt(release) { await install(release) } }
+    }
+
     /// Returns the release the user chose to install. Installing happens after
     /// the check has finished, so the busy flag never blocks the user's choice.
-    private func check(userInitiated: Bool) async -> UpdateRelease? {
+    func check(userInitiated: Bool) async -> UpdateRelease? {
         guard let repository, let currentVersion else {
             status = "Updates are not configured."
             if userInitiated { showAlert(title: "Updates are unavailable", text: "This build has no update source.") }
@@ -146,12 +161,18 @@ struct UpdateInterruptionGate<Release: Equatable> {
                 available = release
                 status = "uiui \(release.version) is available."
                 if Self.shouldPrompt(release: release.version, current: currentVersion,
-                                     skipped: defaults.string(forKey: Keys.skipped), userInitiated: userInitiated),
-                   present(release) {
-                    return release
+                                     skipped: defaults.string(forKey: Keys.skipped), userInitiated: userInitiated) {
+                    pendingNotice = release
+                    switch UpdatePresentation.forFoundRelease(userInitiated: userInitiated, workInFlight: isWorkInFlight()) {
+                    case .promptNow:
+                        if prompt(release) { return release }
+                    case .indicate:
+                        status = "uiui \(release.version) is available. Review it from the menu bar when you are ready."
+                    }
                 }
             } else {
                 available = nil
+                pendingNotice = nil
                 status = "uiui \(currentVersionText) is up to date."
                 if userInitiated { showAlert(title: "uiui is up to date", text: "You have the latest version, \(currentVersionText).") }
             }
@@ -185,37 +206,48 @@ struct UpdateInterruptionGate<Release: Equatable> {
 
     // MARK: Prompt
 
-    /// Prompts now, or holds the release until dictation is idle.
-    private func present(_ release: UpdateRelease) -> Bool {
-        guard let ready = gate.found(release, workInFlight: isWorkInFlight()) else {
-            status = "uiui \(release.version) is available. It will ask when dictation is finished."
-            return false
-        }
-        return prompt(ready)
-    }
-
     /// True when the user chose to install now.
     private func prompt(_ release: UpdateRelease) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "uiui \(release.version) is available"
-        let notes = release.displayNotes()
-        alert.informativeText = (notes.isEmpty ? "" : notes + "\n\n") + "You have version \(currentVersionText)."
-        alert.addButton(withTitle: "Install and Relaunch")
-        alert.addButton(withTitle: "Later")
-        alert.addButton(withTitle: "Skip This Version")
-        NSApp.activate(ignoringOtherApps: true)
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
+        guard UpdatePresentation.mayShowModal(workInFlight: isWorkInFlight()) else { return false }
+        switch promptUser(release, currentVersionText) {
+        case .install:
+            pendingNotice = nil
             return true
-        case .alertThirdButtonReturn:
+        case .skip:
             defaults.set(release.version.description, forKey: Keys.skipped)
-        default:
+            pendingNotice = nil
+        case .later:
             break
         }
         return false
     }
 
+    private static func runPrompt(_ release: UpdateRelease, currentVersion: String) -> UpdatePromptChoice {
+        let alert = NSAlert()
+        alert.messageText = "uiui \(release.version) is available"
+        let notes = release.displayNotes()
+        alert.informativeText = (notes.isEmpty ? "" : notes + "\n\n") + "You have version \(currentVersion)."
+        // Later is the default button, so a stray Return keypress postpones and never installs.
+        let install = alert.addButton(withTitle: "Install and Relaunch")
+        let later = alert.addButton(withTitle: "Later")
+        alert.addButton(withTitle: "Skip This Version")
+        install.keyEquivalent = ""
+        later.keyEquivalent = "\r"
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return .install
+        case .alertThirdButtonReturn: return .skip
+        default: return .later
+        }
+    }
+
+    /// A modal alert only while nothing is being dictated; otherwise the status line says it.
     private func showAlert(title: String, text: String) {
+        guard UpdatePresentation.mayShowModal(workInFlight: isWorkInFlight()) else { status = title + "."; return }
+        showNotice(title, text)
+    }
+
+    private static func runAlert(title: String, text: String) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = text
@@ -229,6 +261,7 @@ struct UpdateInterruptionGate<Release: Equatable> {
     private func install(_ release: UpdateRelease) async {
         guard !isBusy, let currentVersion else { return }
         isBusy = true
+        pendingNotice = nil
         defer { isBusy = false }
         let target = Bundle.main.bundleURL
         do {

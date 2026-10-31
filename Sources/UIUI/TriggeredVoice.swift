@@ -5,6 +5,8 @@ import Observation
 protocol TriggeredVoiceCapture: AnyObject {
     var engineDescription: String { get }
     var engineWarning: String? { get }
+    /// Whether the engine in use can be paused without risk of ending the capture.
+    var supportsPause: Bool { get }
     var onPartial: ((String) -> Void)? { get set }
     var onFinal: ((String) -> Void)? { get set }
     var onCompletion: ((SpeechCompletion) -> Void)? { get set }
@@ -24,6 +26,7 @@ extension TriggeredVoiceCapture {
     @discardableResult func setPaused(_ paused: Bool) -> Bool { false }
     var engineDescription: String { "On-device speech" }
     var engineWarning: String? { nil }
+    var supportsPause: Bool { false }
 }
 
 extension SpeechCapture: TriggeredVoiceCapture {}
@@ -43,6 +46,7 @@ final class TriggeredVoice: NSObject {
     private(set) var lastError: String?
     var engineDescription: String { capture.engineDescription }
     var engineWarning: String? { capture.engineWarning }
+    var supportsPause: Bool { capture.supportsPause }
     var onCommand: ((String) -> Void)?
     /// The caller may accept an explicitly stopped partial or retain a recovery draft.
     var onIncomplete: ((SpeechCompletion) -> Void)?
@@ -223,6 +227,16 @@ final class TriggeredVoice: NSObject {
         audioLevel = 0
         onStateChanged?()
         return true
+    }
+
+    /// Drops transcript text a finished capture still holds (an incomplete or failed
+    /// one). No effect while a capture is starting, running or finishing.
+    func discardHeldText() {
+        guard !isRecording, !starting, !finishing, !partialCommand.isEmpty || state == "incomplete" || state == "error" else { return }
+        partialCommand = ""
+        lastError = nil
+        state = isEnabled ? "idle" : "off"
+        onStateChanged?()
     }
 
     func setWorking(_ value: Bool) {

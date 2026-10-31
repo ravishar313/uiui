@@ -12,9 +12,12 @@ struct LatestDictation: Equatable {
 @MainActor
 extension AppModel {
     var microphoneIsActive: Bool { voice.state == "capturing" || isRecording }
+    /// Held inside one capture: nothing is being transcribed, the words so far are kept.
+    var isVoicePaused: Bool { voice.isPaused && voice.state == "capturing" }
 
     /// One honest sentence about the microphone, shared by Home and the menu bar.
     var voiceStatusSummary: String {
+        if isVoicePaused { return "Paused · not transcribing" }
         if microphoneIsActive { return "Recording" }
         if voiceIsRecording { return "Preparing microphone" }
         if voice.state == "finishing" { return "Finishing · microphone off" }
@@ -62,26 +65,52 @@ extension AppModel {
         case rejected(String)
     }
 
-    /// Fixes the item's text and adds the dictionary entry in one step. The item is
-    /// saved first; the dictionary changes only if that save succeeded.
-    func fixWord(in item: CaptureItem, heard: String, correction: String) async -> WordFixOutcome {
+    static let wordFixUndoDepth = 20
+
+    /// The newest fix to this item that Undo can still restore: nothing has changed
+    /// the text since. It stays available from the item after its banner is dismissed.
+    func undoableFix(for itemID: UUID) -> HistoryWordFix? {
+        guard let fix = wordFixStacks[itemID]?.last,
+              let current = items.first(where: { $0.id == itemID }), current.body == fix.after.body else { return nil }
+        return fix
+    }
+
+    /// Fixes the clicked word (and, only if asked, its other exact matches) and
+    /// optionally teaches the dictionary. The item is saved first; the dictionary
+    /// changes only if that save succeeded.
+    func fixWord(in item: CaptureItem, wordRange: NSRange, heard: String, correction: String,
+                 alsoFixOtherMatches: Bool = false, addToDictionary: Bool = true) async -> WordFixOutcome {
         guard let current = items.first(where: { $0.id == item.id }) else { return .rejected("This text is no longer in history.") }
         let fix: HistoryWordFix
-        do { fix = try HistoryCorrection.plan(item: current, heard: heard, correction: correction, vocabulary: settings.vocabulary) }
+        do {
+            fix = try HistoryCorrection.plan(item: current, wordRange: wordRange, expecting: heard, correction: correction,
+                                             alsoFixOtherMatches: alsoFixOtherMatches, addToDictionary: addToDictionary,
+                                             vocabulary: settings.vocabulary)
+        }
         catch let rejection as HistoryCorrection.Rejection { return .rejected(rejection.message) }
         catch { return .rejected("That word couldn’t be fixed.") }
         guard await persist(fix.after) else { return .rejected("Couldn’t save the fix. Your text is unchanged.") }
         let vocabulary = HistoryCorrection.vocabularyAfter(fix, from: settings.vocabulary)
         if vocabulary != settings.vocabulary { settings.vocabulary = vocabulary }
+        wordFixStacks[item.id, default: []].append(fix)
+        if let count = wordFixStacks[item.id]?.count, count > Self.wordFixUndoDepth {
+            wordFixStacks[item.id]?.removeFirst(count - Self.wordFixUndoDepth)
+        }
         return .fixed(fix)
     }
 
-    /// Restores the item text and removes or restores only the dictionary change the fix made.
+    /// Restores only what the fix changed: the text, and the dictionary entry it added
+    /// or replaced. Anything else about the item (a pin toggled since) is kept.
     func undoWordFix(_ fix: HistoryWordFix) async -> Bool {
-        guard let current = items.first(where: { $0.id == fix.after.id }), current.body == fix.after.body else { return false }
-        guard await persist(fix.before) else { return false }
+        guard var current = items.first(where: { $0.id == fix.after.id }), current.body == fix.after.body else { return false }
+        current.body = fix.before.body
+        if current.title == fix.after.title { current.title = fix.before.title }
+        current.rawText = fix.before.rawText
+        guard await persist(current) else { return false }
         let vocabulary = HistoryCorrection.vocabularyBeforeFix(fix, from: settings.vocabulary)
         if vocabulary != settings.vocabulary { settings.vocabulary = vocabulary }
+        wordFixStacks[fix.after.id]?.removeAll { $0 == fix }
+        if wordFixStacks[fix.after.id]?.isEmpty == true { wordFixStacks[fix.after.id] = nil }
         return true
     }
 }

@@ -125,6 +125,26 @@ enum NotchPasteFailureText {
     }
 }
 
+/// Whether the hover transcript should follow new words. It follows only while the
+/// person is at the end; scrolling up stops it, scrolling back to the end resumes it.
+/// Content growth never counts as the person scrolling.
+struct NotchTranscriptFollow: Equatable {
+    static let bottomTolerance: CGFloat = 6
+    private(set) var following = true
+    private var lastContentHeight: CGFloat?
+
+    /// Feed every layout report. Returns true when the view should scroll to the end now.
+    mutating func update(contentHeight: CGFloat, offset: CGFloat, viewportHeight: CGFloat) -> Bool {
+        defer { lastContentHeight = contentHeight }
+        let changed = lastContentHeight.map { abs($0 - contentHeight) > 0.5 } ?? true
+        // The content moved under the viewport: keep the person's choice.
+        if changed { return following }
+        // Same content, new position: the person scrolled.
+        following = offset + viewportHeight >= contentHeight - Self.bottomTolerance
+        return false
+    }
+}
+
 /// Which display carries the notch and what shape it takes. A display with a camera
 /// housing gets the hardware-matched notch; anything else gets a floating pill
 /// below the menu bar. The pill never invents a camera.

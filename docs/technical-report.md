@@ -173,8 +173,8 @@ Measured on 600 real app transcripts, on correctly recognised words (higher is b
 
 **How the app works now**
 
-1. If a transcript contains both a capital letter and punctuation, it is treated as formatted. The cleanup model is skipped, and only a light final punctuation pass runs (88.3 punctuation F1).
-2. Otherwise, the text goes through uiui P1 (revision `ft3`), which adds punctuation and casing without changing words, and then the final pass.
+1. If the raw transcript contains any capital letter or any of `.,?!`, it is treated as formatted. The cleanup model is skipped, and only a light final punctuation pass runs (88.3 punctuation F1 on the test above). The check runs before dictionary replacements, so a capitalised dictionary word cannot change the decision.
+2. Only all-lowercase text with no punctuation goes through uiui P1 (revision `ft3`), which adds punctuation and casing without changing words, and then the final pass.
 
 The tagger is a 34 MB per-channel INT8 classifier. Retraining it took Hinglish punctuation F1 on clean text from 52 to 89, but normal Phonon output now bypasses it. It remains for unformatted text.
 

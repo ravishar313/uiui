@@ -187,6 +187,29 @@ final class AppleSpeechAnalyzerTests: XCTestCase {
         XCTAssertEqual(completions.first?.reason, .unreconciledFinal)
     }
 
+    @MainActor
+    func testPauseIsRefusedOnTheClassicRecogniserAndAllowedOnProvenEngines() async throws {
+        func capture(_ status: SpeechEngineStatus) async throws -> SpeechCapture {
+            let session = AnalyzerFakeSession(engineStatus: status)
+            let owner = SpeechAudioOwner { _ in session }
+            let speech = SpeechCapture(audioOwner: owner, authorization: { true })
+            try await speech.start(locale: "en-IN", contextualStrings: [])
+            return speech
+        }
+        let classic = try await capture(.legacy)
+        XCTAssertFalse(classic.supportsPause, "The classic recogniser can end by itself after silence")
+        XCTAssertFalse(classic.setPaused(true))
+        XCTAssertTrue(classic.isRecording, "Refusing a pause leaves the capture running")
+        classic.cancel()
+        let proven = try await capture(.init(description: "Synthetic", warning: nil, finalizationWaitMilliseconds: 1,
+                                             requiresCompleteFinalization: true, supportsPause: true))
+        XCTAssertTrue(proven.supportsPause)
+        XCTAssertTrue(proven.setPaused(true))
+        XCTAssertTrue(proven.setPaused(false))
+        proven.cancel()
+        XCTAssertFalse(proven.supportsPause || proven.hasActiveSession)
+    }
+
     func testClassicFinalBeforeExplicitStopIsIncompleteRatherThanAnImplicitCommand() {
         let lease = SpeechAudioLease()
         let event = SpeechRecognitionEvent.legacy(text: "words before silence", isFinal: true, failed: false, segments: [], lease: lease)

@@ -285,7 +285,7 @@ extension AppModel {
                         detail: "Sent to \(destination?.appName ?? "your app"). The complete dictation stays on your clipboard.", presentation: .pasteDispatch)
                     // Undo and Copy stay reachable briefly; Undo needs a known destination.
                     receipt.offersUndo = true
-                    notchExtras.offerUndo(captureID: captureID, target: destination)
+                    notchExtras.offerUndo(captureID: captureID, target: destination, proof: delivery.pasteUndoProof())
                     dictationFeedback = receipt
                 }
                 let sentAt = DispatchTime.now().uptimeNanoseconds

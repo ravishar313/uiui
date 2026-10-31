@@ -31,6 +31,13 @@ struct VoiceHomeView: View {
                 mainCard.frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
                 shortcutCard.frame(width: 268, alignment: .topLeading)
             }.fixedSize(horizontal: false, vertical: true)
+            if let updater = model.updater, let release = updater.pendingNotice {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.circle").accessibilityHidden(true)
+                    Text("uiui \(release.version) is available").lineLimit(1)
+                    Button("Review") { updater.presentPendingUpdate() }.buttonStyle(.borderless)
+                }.font(.system(size: 10)).foregroundStyle(.secondary)
+            }
             if let warning = model.speechEngineWarning {
                 Label(warning, systemImage: "exclamationmark.circle")
                     .font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
@@ -63,8 +70,12 @@ struct VoiceHomeView: View {
         VStack(alignment: .leading, spacing: 8) {
             if showingLiveTranscript || model.voiceIsRecording || microphoneActive {
                 HStack(spacing: 6) {
-                    Circle().fill(modeAccent).frame(width: 6, height: 6)
-                    Text("Listening").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    if model.isVoicePaused {
+                        Image(systemName: "pause.circle.fill").font(.system(size: 11)).foregroundStyle(modeAccent).accessibilityHidden(true)
+                    } else {
+                        Circle().fill(modeAccent).frame(width: 6, height: 6)
+                    }
+                    Text(model.isVoicePaused ? "Paused" : "Listening").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
                 }
                 if showingLiveTranscript {
                     ScrollView {
@@ -72,7 +83,8 @@ struct VoiceHomeView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }.frame(maxHeight: 96)
                 } else {
-                    Text("Start speaking. Your words appear here.").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(model.isVoicePaused ? "Paused. Nothing is being transcribed. Press Control-Option-P to continue."
+                         : "Start speaking. Your words appear here.").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
             } else if let latest = model.latestDictation {
                 HStack(spacing: 6) {
@@ -137,7 +149,11 @@ struct VoiceHomeView: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: 8) {
-                Circle().fill(microphoneActive ? modeAccent : Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
+                if model.isVoicePaused {
+                    Image(systemName: "pause.circle.fill").font(.system(size: 10)).foregroundStyle(modeAccent).accessibilityHidden(true)
+                } else {
+                    Circle().fill(microphoneActive ? modeAccent : Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
+                }
                 Text(model.voiceStatusSummary).font(.system(size: 11, weight: .medium)).lineLimit(1)
                     .foregroundStyle(microphoneActive ? .primary : .secondary)
                 Spacer(minLength: 4)

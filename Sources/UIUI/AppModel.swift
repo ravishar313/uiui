@@ -119,6 +119,11 @@ final class AppModel {
     @ObservationIgnored var voiceFirstPartialSeen = false
     @ObservationIgnored var voiceDestination: DeliveryTarget?
     var lastTypedText = ""
+    /// The app in front, injectable so Undo rules can be tested without moving real windows.
+    @ObservationIgnored var frontmostApplicationPID: () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+    /// Word fixes that can still be undone, newest last, per item. Held in memory for
+    /// the app session only; never written to disk or logged.
+    var wordFixStacks: [UUID: [HistoryWordFix]] = [:]
     var canCopyLastDictation: Bool {
         !lastTypedText.isEmpty && !voiceIsRecording && voice.state != "finishing" && dictationFeedback?.state != .working
     }
@@ -579,6 +584,7 @@ final class AppModel {
                     else if systemServicesEnabled { await LegacyReminderCleanup.remove(id: item.id) }
                 }
                 if selectedItemID == item.id { selectedItemID = nil }
+                wordFixStacks[item.id] = nil
                 await reload()
                 statusMessage = "Moved out of your library."
             }

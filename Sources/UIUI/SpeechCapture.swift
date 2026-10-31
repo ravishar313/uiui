@@ -31,6 +31,8 @@ final class SpeechCapture {
     private(set) var stateDescription = "Ready"
     private(set) var engineDescription = "On-device speech"
     private(set) var engineWarning: String?
+    /// Set when a session starts, from the engine actually chosen. False until then.
+    private(set) var supportsPause = false
     @ObservationIgnored private var finalizationWaitMilliseconds = 1200
     @ObservationIgnored private var requiresCompleteFinalization = false
     var hasActiveSession: Bool { isStarting || isRecording || isFinishing || completingGeneration != nil }
@@ -98,6 +100,7 @@ final class SpeechCapture {
         transcript = ""
         isStarting = true
         engineDescription = "Preparing on-device speech"
+        supportsPause = false
         engineWarning = nil
         stateDescription = "Checking speech permissions…"
         let requiresSpeechRecognition = !LocalSpeechModel.supports(locale: locale)
@@ -131,6 +134,7 @@ final class SpeechCapture {
             isRecording = true
             engineDescription = engineStatus.description
             engineWarning = engineStatus.warning
+            supportsPause = engineStatus.supportsPause
             finalizationWaitMilliseconds = engineStatus.finalizationWaitMilliseconds
             requiresCompleteFinalization = engineStatus.requiresCompleteFinalization
             stateDescription = engineStatus.warning ?? "Listening on device · \(engineStatus.description)"
@@ -180,7 +184,7 @@ final class SpeechCapture {
     /// and cancel behave exactly as in an unpaused session. Returns whether it applied.
     @discardableResult
     func setPaused(_ paused: Bool) -> Bool {
-        guard isRecording, !isFinishing, let lease else { return false }
+        guard supportsPause || !paused, isRecording, !isFinishing, let lease else { return false }
         lease.setPaused(paused)
         stateDescription = paused ? "Paused" : "Listening on device · \(engineDescription)"
         return true
@@ -188,6 +192,7 @@ final class SpeechCapture {
 
     func cancel() {
         let cancelledCapture = hasActiveSession
+        supportsPause = false
         generation &+= 1
         activeGeneration = nil
         finalWait?.cancel(); finalWait = nil
@@ -385,10 +390,16 @@ struct SpeechEngineStatus: Equatable, Sendable {
     let warning: String?
     let finalizationWaitMilliseconds: Int
     let requiresCompleteFinalization: Bool
-    init(description: String, warning: String?, finalizationWaitMilliseconds: Int, requiresCompleteFinalization: Bool = false) {
+    /// Whether pausing (dropping audio at the tap for a while) is proven safe for this
+    /// engine. Off unless an engine is known to carry on unharmed: the classic
+    /// recogniser can end by itself after silence or a time limit, which a pause would trigger.
+    let supportsPause: Bool
+    init(description: String, warning: String?, finalizationWaitMilliseconds: Int, requiresCompleteFinalization: Bool = false,
+         supportsPause: Bool = false) {
         self.description = description; self.warning = warning
         self.finalizationWaitMilliseconds = finalizationWaitMilliseconds
         self.requiresCompleteFinalization = requiresCompleteFinalization
+        self.supportsPause = supportsPause
     }
     static let legacy = SpeechEngineStatus(description: "Classic on-device dictation", warning: nil, finalizationWaitMilliseconds: 1200)
 }

@@ -61,19 +61,19 @@ final class VoiceSpellingTests: XCTestCase {
     }
 
     @MainActor
-    func testConfirmedCanonicalLaukiSpellingSurvivesCleanupCasing() async throws {
+    func testConfirmedCanonicalKiranSpellingSurvivesCleanupCasing() async throws {
         let delivery = SpellingDelivery(), cleanup = SpellingCleanup()
         cleanup.result = "LAUKI said okay"
         let model = try model(delivery: delivery, cleanup: cleanup)
         model.settings.saveDictationHistory = false
-        XCTAssertTrue(model.addVocabulary(heard: "locky", replacement: "Lauki", project: "All projects"))
-        XCTAssertEqual(model.settings.vocabulary.first?.replacement, "Lauki")
+        XCTAssertTrue(model.addVocabulary(heard: "locky", replacement: "Kiran", project: "All projects"))
+        XCTAssertEqual(model.settings.vocabulary.first?.replacement, "Kiran")
         model.voiceInputKind = .dictation
         model.performVoiceTyping("locky said okay")
         await model.voiceActionTask?.value
-        XCTAssertEqual(cleanup.received, ["Lauki said okay"])
-        XCTAssertEqual(delivery.delivered, ["Lauki said okay"])
-        XCTAssertEqual(model.lastTypedText, "Lauki said okay")
+        XCTAssertEqual(cleanup.received, ["Kiran said okay"])
+        XCTAssertEqual(delivery.delivered, ["Kiran said okay"])
+        XCTAssertEqual(model.lastTypedText, "Kiran said okay")
     }
 
     @MainActor

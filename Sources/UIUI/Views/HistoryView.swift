@@ -252,16 +252,17 @@ struct SavedTextView: View {
     let item: CaptureItem
     @State private var showDelete = false
     @State private var fixMode = false
-    @State private var lastFix: HistoryWordFix?
     @State private var notice: String?
 
     init(model: AppModel, item: CaptureItem, startsInFixMode: Bool = false, previousFix: HistoryWordFix? = nil) {
         self.model = model
         self.item = item
         _fixMode = State(initialValue: startsInFixMode)
-        _lastFix = State(initialValue: previousFix)
         _notice = State(initialValue: previousFix.map(Self.message(for:)))
     }
+
+    /// Survives the banner being dismissed and the view being left: it lives in the model.
+    private var undoableFix: HistoryWordFix? { model.undoableFix(for: item.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -269,6 +270,10 @@ struct SavedTextView: View {
                 Button { model.selectedItemID = nil } label: { Label("History", systemImage: "chevron.left") }
                     .buttonStyle(.plain).help("Back to history").keyboardShortcut(.cancelAction)
                 Spacer()
+                if undoableFix != nil {
+                    Button { undo() } label: { Label("Undo last fix", systemImage: "arrow.uturn.backward") }
+                        .buttonStyle(.borderless).help("Put back the text and dictionary entry from the last fix")
+                }
                 Button { fixMode.toggle() } label: {
                     Label(fixMode ? "Done fixing" : "Fix a word", systemImage: fixMode ? "checkmark" : "character.cursor.ibeam")
                 }.buttonStyle(.borderless).help("Click a misheard word to correct it and teach your dictionary")
@@ -283,9 +288,9 @@ struct SavedTextView: View {
                     Text(metadata).font(.system(size: 10)).foregroundStyle(.secondary)
                     if let notice { noticeBanner(notice) }
                     if fixMode {
-                        Text("Click the word that was misheard.").font(.system(size: 11)).foregroundStyle(.secondary)
-                        WordFixBody(text: item.body) { heard, correction in
-                            await submit(heard: heard, correction: correction)
+                        Text("Click the word that was misheard, or use the arrow keys and Return.").font(.system(size: 11)).foregroundStyle(.secondary)
+                        WordFixBody(text: item.body) { range, heard, correction, others, dictionary in
+                            await submit(range: range, heard: heard, correction: correction, others: others, dictionary: dictionary)
                         }
                     } else {
                         Text(item.body).font(.system(size: 14)).lineSpacing(7).textSelection(.enabled)
@@ -319,10 +324,10 @@ struct SavedTextView: View {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(UIUIStyle.lime).accessibilityHidden(true)
             Text(text).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            if lastFix != nil {
+            if undoableFix != nil {
                 Button("Undo") { undo() }.buttonStyle(.borderless).font(.system(size: 12, weight: .medium))
             }
-            Button { notice = nil; lastFix = nil } label: { Image(systemName: "xmark") }
+            Button { notice = nil } label: { Image(systemName: "xmark") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("Dismiss").help("Dismiss")
         }.padding(.horizontal, 12).padding(.vertical, 9)
             .background(UIUIStyle.lime.opacity(0.14), in: RoundedRectangle(cornerRadius: 9))
@@ -330,26 +335,22 @@ struct SavedTextView: View {
     }
 
     /// Returns an error message for the popover, or nil when the fix was applied.
-    private func submit(heard: String, correction: String) async -> String? {
-        switch await model.fixWord(in: item, heard: heard, correction: correction) {
+    private func submit(range: NSRange, heard: String, correction: String, others: Bool, dictionary: Bool) async -> String? {
+        switch await model.fixWord(in: item, wordRange: range, heard: heard, correction: correction,
+                                   alsoFixOtherMatches: others, addToDictionary: dictionary) {
         case .rejected(let reason): return reason
         case .fixed(let fix):
-            lastFix = fix
             notice = Self.message(for: fix)
             return nil
         }
     }
 
     private func undo() {
-        guard let fix = lastFix else { return }
+        guard let fix = undoableFix else { return }
         Task {
-            if await model.undoWordFix(fix) {
-                lastFix = nil
-                notice = "Undone. The text and dictionary are back as they were."
-            } else {
-                notice = "Couldn’t undo because the text has changed since."
-                lastFix = nil
-            }
+            notice = await model.undoWordFix(fix)
+                ? "Undone. The text and dictionary are back as they were."
+                : "Couldn’t undo because the text has changed since."
         }
     }
 
@@ -360,85 +361,228 @@ struct SavedTextView: View {
         case .added: return base + " and added it to your dictionary."
         case .updated(let previous): return base + ". Dictionary entry updated (was “\(previous.replacement)”)."
         case .alreadyPresent: return base + ". Your dictionary already had this."
+        case .notRequested: return base + ". Your dictionary was not changed."
         }
     }
 }
 
 // MARK: Click-a-word correction
 
-/// The saved text as clickable words. Clicking one opens a small field for the correction.
+private struct PickedWord: Identifiable, Equatable {
+    let id = UUID()
+    let range: NSRange
+    let word: String
+    let rect: CGRect
+}
+
+/// The saved text as one text view. A click is hit-tested to a word and opens a
+/// small form beside it, so cost does not grow with the number of words.
 private struct WordFixBody: View {
     let text: String
-    let onSubmit: (_ heard: String, _ correction: String) async -> String?
-    @State private var editingID: String?
-
-    private var lines: [[String]] {
-        text.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.split(separator: " ", omittingEmptySubsequences: true).map(String.init) }
-    }
+    let onSubmit: (_ range: NSRange, _ heard: String, _ correction: String, _ alsoFixOthers: Bool, _ addToDictionary: Bool) async -> String?
+    @State private var picked: PickedWord?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { lineIndex, words in
-                if words.isEmpty { Color.clear.frame(height: 8) }
-                else {
-                    FlowLayout(spacing: 2, lineSpacing: 7) {
-                        ForEach(Array(words.enumerated()), id: \.offset) { wordIndex, chunk in
-                            let id = "\(lineIndex)-\(wordIndex)"
-                            WordChip(chunk: chunk, isEditing: Binding(
-                                get: { editingID == id },
-                                set: { if $0 { editingID = id } else if editingID == id { editingID = nil } }
-                            ), onSubmit: onSubmit)
-                        }
-                    }
-                }
+        FixableText(text: text, highlighted: picked?.range) { range, rect in
+            let word = (text as NSString).substring(with: range)
+            picked = PickedWord(range: range, word: word, rect: rect)
+        }
+        .popover(item: $picked, attachmentAnchor: .rect(.rect(picked?.rect ?? .zero)), arrowEdge: .bottom) { pick in
+            FixWordForm(word: pick.word,
+                        otherMatches: max(0, HistoryCorrection.exactMatches(of: pick.word, in: text).count - 1),
+                        onCancel: { picked = nil }) { correction, others, dictionary in
+                let failure = await onSubmit(pick.range, pick.word, correction, others, dictionary)
+                if failure == nil { picked = nil }
+                return failure
             }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
-private struct WordChip: View {
-    let chunk: String
-    @Binding var isEditing: Bool
-    let onSubmit: (_ heard: String, _ correction: String) async -> String?
-    @State private var hovering = false
+/// Text view with word hit-testing. Layout is TextKit's; the view count stays at one.
+final class FixTextView: NSTextView {
+    var onPick: ((NSRange, CGRect) -> Void)?
+    private(set) var plainText = ""
+    private var marked: [NSRange] = []
+    private var hover: NSRange?
+    var highlight: NSRange? { didSet { restyle() } }
+    private var keyboardWord: NSRange?
+    private var lastWidth: CGFloat = -1
+    private var lastHeight: CGFloat = 0
+    private var tracking: NSTrackingArea?
 
-    private var word: String { HistoryCorrection.coreWord(of: chunk) }
+    static let fontSize: CGFloat = 14
+    static let lineSpacing: CGFloat = 7
 
-    var body: some View {
-        Button { if !word.isEmpty { isEditing = true } } label: {
-            Text(chunk).font(.system(size: 14))
-                .padding(.horizontal, 2).padding(.vertical, 1)
-                .background((hovering || isEditing) && !word.isEmpty ? UIUIStyle.lime.opacity(0.28) : .clear,
-                            in: RoundedRectangle(cornerRadius: 4))
-        }.buttonStyle(.plain).onHover { hovering = $0 }
-            .disabled(word.isEmpty)
-            .accessibilityLabel("Fix \(chunk)")
-            .popover(isPresented: $isEditing, arrowEdge: .bottom) {
-                FixWordForm(word: word, onCancel: { isEditing = false }) { correction in
-                    let failure = await onSubmit(word, correction)
-                    if failure == nil { isEditing = false }
-                    return failure
-                }
+    func configure(text: String) {
+        guard text != plainText || textStorage?.length == 0 else { return }
+        plainText = text
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = Self.lineSpacing
+        textStorage?.setAttributedString(NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: Self.fontSize), .foregroundColor: NSColor.labelColor, .paragraphStyle: style
+        ]))
+        marked = []; hover = nil; keyboardWord = nil; lastWidth = -1
+    }
+
+    /// Height for a width; laid out once per width and text.
+    func height(forWidth width: CGFloat) -> CGFloat {
+        guard width.isFinite, width > 0, let layoutManager, let textContainer else { return 0 }
+        if abs(width - lastWidth) < 0.5 { return lastHeight }
+        textContainer.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
+        layoutManager.ensureLayout(for: textContainer)
+        lastWidth = width
+        lastHeight = ceil(layoutManager.usedRect(for: textContainer).height)
+        return lastHeight
+    }
+
+    /// The word under a point in this view's coordinates, nil on gaps between lines or past line ends.
+    func word(at point: CGPoint) -> NSRange? {
+        guard let layoutManager, let textContainer, layoutManager.numberOfGlyphs > 0 else { return nil }
+        let local = CGPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        var fraction: CGFloat = 0
+        let glyph = layoutManager.glyphIndex(for: local, in: textContainer, fractionOfDistanceThroughGlyph: &fraction)
+        let box = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+        guard box.insetBy(dx: -1, dy: -Self.lineSpacing / 2).contains(local) else { return nil }
+        return HistoryCorrection.wordRange(in: plainText, atUTF16Offset: layoutManager.characterIndexForGlyph(at: glyph))
+    }
+
+    func rect(of range: NSRange) -> CGRect {
+        guard let layoutManager, let textContainer else { return .zero }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        let box = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        return box.offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+    }
+
+    private func restyle() {
+        guard let layoutManager else { return }
+        for range in marked { layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range) }
+        marked = [highlight, hover, keyboardWord].compactMap { $0 }
+        let color = NSColor(UIUIStyle.lime).withAlphaComponent(0.28)
+        for range in marked { layoutManager.addTemporaryAttributes([.backgroundColor: color], forCharacterRange: range) }
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let found = word(at: convert(event.locationInWindow, from: nil))
+        if found != hover { hover = found; restyle() }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if hover != nil { hover = nil; restyle() }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        if let range = word(at: convert(event.locationInWindow, from: nil)) {
+            keyboardWord = range
+            onPick?(range, rect(of: range))
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 123, 124: moveKeyboardWord(forward: event.keyCode == 124)
+        case 36, 76, 49:
+            if let range = keyboardWord { onPick?(range, rect(of: range)) } else { moveKeyboardWord(forward: true) }
+        default: super.keyDown(with: event)
+        }
+    }
+
+    private func moveKeyboardWord(forward: Bool) {
+        let length = (plainText as NSString).length
+        var offset = forward ? (keyboardWord.map(NSMaxRange) ?? 0) : ((keyboardWord?.location ?? length) - 1)
+        while offset >= 0, offset < length {
+            if let range = HistoryCorrection.wordRange(in: plainText, atUTF16Offset: offset) {
+                keyboardWord = range; restyle(); scrollToVisible(rect(of: range).insetBy(dx: -8, dy: -12)); return
             }
+            offset += forward ? 1 : -1
+        }
+    }
+}
+
+private struct FixableText: NSViewRepresentable {
+    let text: String
+    let highlighted: NSRange?
+    let onPick: (NSRange, CGRect) -> Void
+
+    func makeNSView(context: Context) -> FixTextView {
+        let view = FixTextView(usingTextLayoutManager: false)
+        view.isEditable = false
+        view.isSelectable = false
+        view.drawsBackground = false
+        view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.textContainer?.widthTracksTextView = false
+        view.isHorizontallyResizable = false
+        view.isVerticallyResizable = false
+        view.setAccessibilityLabel("Saved text")
+        view.setAccessibilityHelp("Choose a word with the arrow keys and press Return to fix it.")
+        return view
+    }
+
+    func updateNSView(_ view: FixTextView, context: Context) {
+        view.onPick = onPick
+        view.configure(text: text)
+        view.highlight = highlighted
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView view: FixTextView, context: Context) -> CGSize? {
+        view.configure(text: text)
+        let width = proposal.width ?? 600
+        return CGSize(width: width, height: view.height(forWidth: width))
     }
 }
 
 struct FixWordForm: View {
     let word: String
+    let otherMatches: Int
     let onCancel: () -> Void
-    let onSubmit: (_ correction: String) async -> String?
+    let onSubmit: (_ correction: String, _ alsoFixOthers: Bool, _ addToDictionary: Bool) async -> String?
     @State private var correction = ""
+    @State private var alsoFixOthers = false
+    @State private var addToDictionary: Bool
     @State private var problem: String?
     @State private var working = false
     @FocusState private var focused: Bool
+
+    init(word: String, otherMatches: Int = 0, onCancel: @escaping () -> Void,
+         onSubmit: @escaping (_ correction: String, _ alsoFixOthers: Bool, _ addToDictionary: Bool) async -> String?) {
+        self.word = word
+        self.otherMatches = otherMatches
+        self.onCancel = onCancel
+        self.onSubmit = onSubmit
+        _addToDictionary = State(initialValue: HistoryCorrection.suggestsDictionaryEntry(for: word))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Fix “\(word)”").font(.system(size: 13, weight: .semibold))
             TextField("Write it as", text: $correction).textFieldStyle(.roundedBorder).focused($focused)
                 .frame(width: 240).onSubmit(apply).accessibilityLabel("Correct spelling")
-            Text("This text changes, and “\(word.lowercased())” becomes the written form in your dictionary for all projects.")
+            if otherMatches > 0 {
+                Toggle(isOn: $alsoFixOthers) {
+                    Text("Also fix other matches here (\(otherMatches))").font(.system(size: 12))
+                }.toggleStyle(.checkbox)
+                Text("Whole words with the same spelling and capitals, in this text only.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Toggle(isOn: $addToDictionary) {
+                Text("Use this spelling in future dictation").font(.system(size: 12))
+            }.toggleStyle(.checkbox)
+            Text(addToDictionary
+                 ? "“\(word.lowercased())” will be written the way you type above, for all projects."
+                 : "Only this saved text changes. Your dictionary stays as it is.")
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let problem {
                 Label(problem, systemImage: "exclamationmark.circle").font(.system(size: 11)).foregroundStyle(.orange)
@@ -457,39 +601,8 @@ struct FixWordForm: View {
         guard !working else { return }
         working = true
         Task {
-            problem = await onSubmit(correction)
+            problem = await onSubmit(correction, alsoFixOthers && otherMatches > 0, addToDictionary)
             working = false
         }
-    }
-}
-
-/// Wraps children onto lines like text.
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 4
-    var lineSpacing: CGFloat = 4
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        arrange(width: proposal.width ?? .infinity, subviews: subviews).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = arrange(width: bounds.width, subviews: subviews)
-        for (index, origin) in result.origins.enumerated() {
-            subviews[index].place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
-        }
-    }
-
-    private func arrange(width: CGFloat, subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
-        var origins: [CGPoint] = []
-        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0, maxX: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width { x = 0; y += lineHeight + lineSpacing; lineHeight = 0 }
-            origins.append(CGPoint(x: x, y: y))
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-            maxX = max(maxX, x - spacing)
-        }
-        return (CGSize(width: maxX, height: y + lineHeight), origins)
     }
 }

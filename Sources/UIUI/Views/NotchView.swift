@@ -55,7 +55,7 @@ struct NotchView: View {
         phase == .dispatched && (preview?.undo ?? (model.notchVoiceFeedback?.offersUndo == true))
     }
     private var undoAvailable: Bool { preview?.undo ?? model.notchUndoAvailable }
-    private var sentApp: String? { preview?.sentApp ?? extras.undoOffer?.appName }
+    private var sentApp: String? { preview?.sentApp ?? extras.undoOffer?.appName ?? model.voiceDestination?.appName }
     private var copiedApp: String? { preview?.copiedApp ?? model.voiceDestination?.appName }
     private var canPause: Bool { phase == .recording && (preview?.hovering == true || model.canPauseVoiceCapture) }
     /// Eyes and Voice bars draw the whole header; the logo and glance marks step aside.
@@ -70,7 +70,7 @@ struct NotchView: View {
         if phase == .preparing { return "Starting dictation. Microphone not ready" }
         if model.queuedVoiceCaptureKind != nil || phase == .queued { return "Next recording queued. Microphone off" }
         if phase == .processing { return "Processing dictation. Microphone off" }
-        if offersUndo { return "Paste sent. Undo and Copy available" }
+        if offersUndo { return undoAvailable ? "Paste sent. Undo and Copy available" : "Paste sent. Copy available" }
         if let feedback = model.notchVoiceFeedback { return "Microphone off. " + feedback.compactText }
         if let issue = model.notchActionableError { return "Microphone off. " + issue }
         return "Microphone off"
@@ -351,6 +351,8 @@ private struct HoverTranscript<Timer: View>: View {
     let timer: Timer
     /// ImageRenderer cannot draw a ScrollView, so previews lay the same text out bottom-aligned.
     var staticLayout = false
+    @State private var follow = NotchTranscriptFollow()
+    @State private var viewportHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 2) {
@@ -376,8 +378,24 @@ private struct HoverTranscript<Timer: View>: View {
                         .textSelection(.disabled)
                         Color.clear.frame(height: 1).id("end")
                     }
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: TranscriptContentKey.self,
+                                                   value: .init(minY: geometry.frame(in: .named("hoverTranscript")).minY, height: geometry.size.height))
+                        }
+                    }
                 }
-                .onChange(of: text) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+                .coordinateSpace(name: "hoverTranscript")
+                .background {
+                    GeometryReader { geometry in Color.clear.preference(key: TranscriptViewportKey.self, value: geometry.size.height) }
+                }
+                .onPreferenceChange(TranscriptViewportKey.self) { viewportHeight = $0 }
+                .onPreferenceChange(TranscriptContentKey.self) { content in
+                    // New words keep the view at the end only while the person is at the end.
+                    if follow.update(contentHeight: content.height, offset: -content.minY, viewportHeight: viewportHeight) {
+                        proxy.scrollTo("end", anchor: .bottom)
+                    }
+                }
                 .onAppear { proxy.scrollTo("end", anchor: .bottom) }
             }
             }
@@ -395,9 +413,26 @@ private struct HoverTranscript<Timer: View>: View {
     }
 }
 
-/// Newest words in the accent colour, fading to white a few words back.
+private struct TranscriptContent: Equatable {
+    var minY: CGFloat = 0
+    var height: CGFloat = 0
+}
+private struct TranscriptContentKey: PreferenceKey {
+    static var defaultValue = TranscriptContent()
+    static func reduce(value: inout TranscriptContent, nextValue: () -> TranscriptContent) { value = nextValue() }
+}
+private struct TranscriptViewportKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// Newest words in the accent colour, fading to white a few words back. Only the last
+/// few words are styled one by one; everything older is one plain run, so the cost of an
+/// update does not grow with the length of the transcript.
 enum NotchWordsText {
     static let fadeWords = 5
+    /// The one-line viewport shows the end of the text; this many trailing characters are plenty.
+    static let rollingLineCharacters = 240
 
     /// 1 for the newest word, falling to 0 after `fadeWords` words.
     static func recency(index: Int, count: Int) -> Double {
@@ -405,13 +440,41 @@ enum NotchWordsText {
         return max(0, 1 - Double(count - 1 - index) / Double(fadeWords))
     }
 
+    /// Where the last `fadeWords` words begin (just after the word before them),
+    /// found by walking back from the end: cost depends on the tail, not the text.
+    static func tailStart(in text: String) -> String.Index {
+        var index = text.endIndex
+        var words = 0
+        var inWord = false
+        while index > text.startIndex {
+            let previous = text.index(before: index)
+            if text[previous].isWhitespace { inWord = false }
+            else if !inWord {
+                inWord = true
+                words += 1
+                if words > fadeWords { return index }
+            }
+            index = previous
+        }
+        return text.startIndex
+    }
+
+    /// The last `rollingLineCharacters` of `text`, whitespace collapsed to single spaces.
+    static func rollingTail(of text: String) -> String {
+        String(text.suffix(rollingLineCharacters)).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
     static func attributed(_ text: String) -> AttributedString {
-        let words = text.split(whereSeparator: { $0.isWhitespace })
+        let split = tailStart(in: text)
         var result = AttributedString()
+        if split > text.startIndex {
+            result = AttributedString(String(text[..<split]) + " ")
+            result.foregroundColor = blend(0)
+        }
+        let words = text[split...].split(whereSeparator: { $0.isWhitespace })
         for (index, word) in words.enumerated() {
             var piece = AttributedString(String(word) + (index < words.count - 1 ? " " : ""))
-            let r = recency(index: index, count: words.count)
-            piece.foregroundColor = blend(r)
+            piece.foregroundColor = blend(recency(index: index, count: words.count))
             result += piece
         }
         return result
@@ -502,7 +565,7 @@ private struct RollingTranscriptLine: View {
     var colorize = false
     @Environment(\.notchReduceMotion) private var reduceMotion
     @State private var measuredWidth: CGFloat = 0
-    private var singleLine: String { text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
+    private var singleLine: String { NotchWordsText.rollingTail(of: text) }
 
     var body: some View {
         GeometryReader { geometry in

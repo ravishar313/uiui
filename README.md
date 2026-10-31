@@ -25,10 +25,11 @@ Larger models still win on pure Hindi and clearly read English. The [technical r
 ## Features
 
 - **Shortcut:** tap Fn/Globe by default, or record any modifier, function key or combination. Optional hold-to-speak.
-- **Notch feedback:** Mosaic, Liquid or Ribbon [styles](docs/notch-styles.md) show recognised words as you speak. uiui never presses Enter or sends a message.
-- **History:** search, copy, pin and delete past dictations.
+- **Notch feedback:** Mosaic, Eyes, Voice bars or Words first [styles](docs/notch-styles.md) show that uiui hears you. Hover to read the full transcript, pause and resume, and undo a paste when it's safe to do so. Macs without a notch get a small floating pill. uiui never presses Enter or sends a message.
+- **History:** grouped by day and filterable by app, with search, copy, pin and delete. Click a misheard word to fix it and optionally teach the dictionary.
 - **Recovery:** keeps the recognised text of up to 20 unfinished recordings. Raw audio is not saved.
 - **Dictionary:** custom names, spellings and shorthand with exact case.
+- **Privacy:** a plain page of what is stored, what is never sent, and a button to delete it all.
 - **Updates:** signed updates from GitHub Releases, with hash and signature checks. See [updates](docs/updates.md).
 
 ## Models

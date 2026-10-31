@@ -12,6 +12,8 @@ final class NotchCaptureExtras {
         let target: DeliveryTarget
         let appName: String?
         let deadline: TimeInterval
+        /// Evidence that the paste landed and nothing has touched the field since.
+        let proof: PasteUndoProof
     }
 
     private(set) var cannotHear = false
@@ -113,10 +115,11 @@ final class NotchCaptureExtras {
         }
     }
 
-    func offerUndo(captureID: UUID, target: DeliveryTarget?) {
-        guard let target else { undoOffer = nil; return }
+    /// Without a known destination and a proof, there is no Undo: the notch shows only Copy.
+    func offerUndo(captureID: UUID, target: DeliveryTarget?, proof: PasteUndoProof?) {
+        guard let target, let proof else { undoOffer = nil; return }
         undoOffer = UndoOffer(captureID: captureID, target: target, appName: target.appName,
-                              deadline: clock() + NotchUndoPolicy.window + 0.5)
+                              deadline: clock() + NotchUndoPolicy.window + 0.5, proof: proof)
     }
     func clearUndo() { undoOffer = nil }
 }
@@ -126,7 +129,12 @@ extension AppModel {
     var notchVoiceIsPaused: Bool { voice.isPaused }
     /// Words shown by the notch: the live recognition while a session is active.
     var notchTranscript: String { speech.hasActiveSession ? liveTranscript : voiceTranscript }
-    var canPauseVoiceCapture: Bool { voice.isRecording && voice.state == "capturing" }
+    /// Pause exists only where it is proven safe (not the classic recogniser) and where
+    /// the person can see it: with the notch off it stays unavailable, though a pause
+    /// already in effect can still be resumed.
+    var canPauseVoiceCapture: Bool {
+        voice.isRecording && voice.state == "capturing" && voice.supportsPause && (settings.notchEnabled || voice.isPaused)
+    }
 
     func pauseVoiceCapture() {
         guard canPauseVoiceCapture, voice.setPaused(true) else { return }
@@ -150,8 +158,10 @@ extension AppModel {
         return NotchUndoPolicy.isAvailable(
             sentCaptureID: offer.captureID, currentCaptureID: dictationCaptureGeneration,
             captureActive: voiceIsRecording || isRecording || queuedVoiceCaptureKind != nil,
-            targetPID: offer.target.appPID, frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            targetPID: offer.target.appPID, frontmostPID: frontmostApplicationPID(),
             now: notchExtras.clock(), deadline: offer.deadline)
+            // The click on Undo may itself be the latest mouse-down, so the check allows for it.
+            && offer.proof.isSafeToUndo(invokedByClick: true)
     }
 
     /// Sends one Command-Z to the app that received the paste. Never presses Enter.
@@ -164,7 +174,7 @@ extension AppModel {
             return
         }
         notchExtras.clearUndo()
-        let sent = delivery.undoPaste(to: offer.target)
+        let sent = delivery.undoPaste(to: offer.target, proof: offer.proof, invokedByClick: NSApp?.currentEvent?.type == .leftMouseUp)
         dictationFeedback = VoiceActionFeedback(state: sent ? .information : .failure,
             title: sent ? "Undo sent" : "Couldn’t undo",
             detail: sent ? "Command-Z was sent to \(offer.appName ?? "your app")." : "Use Command-Z in \(offer.appName ?? "your app") yourself.")

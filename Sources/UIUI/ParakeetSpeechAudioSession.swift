@@ -233,7 +233,8 @@ final class ParakeetSpeechAudioSession: SpeechAudioSession, @unchecked Sendable 
         self.configuration = configuration; self.decoder = decoder
         self.descriptor = descriptor
         engineStatus = SpeechEngineStatus(description: descriptor.modelDescription, warning: nil,
-                                         finalizationWaitMilliseconds: 12_000, requiresCompleteFinalization: true)
+                                         finalizationWaitMilliseconds: 12_000, requiresCompleteFinalization: true,
+                                         supportsPause: true)
     }
 
     func prepare(lease: SpeechAudioLease) async throws {

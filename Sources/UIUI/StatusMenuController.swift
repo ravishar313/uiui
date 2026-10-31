@@ -11,6 +11,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         var openSettings: () -> Void
         var openSetupGuide: () -> Void
         var checkForUpdates: () -> Void
+        /// Opens the update prompt the person was told about, only when they choose it.
+        var reviewUpdate: () -> Void = {}
         var quit: () -> Void
     }
 
@@ -45,11 +47,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return String(flat.prefix(recentTitleLimit - 1)).trimmingCharacters(in: .whitespaces) + "…"
     }
 
+    static func symbolName(paused: Bool, active: Bool) -> String { paused ? "pause.circle.fill" : active ? "mic.fill" : "eyes" }
+
     /// Cheap and idempotent: called whenever the app reports activity.
     func refreshState() {
         let active = model.microphoneIsActive
         if let button = statusItem.button {
-            let name = active ? "mic.fill" : "eyes"
+            let name = Self.symbolName(paused: model.isVoicePaused, active: active)
             let description = "uiui, \(model.voiceStatusSummary.lowercased())"
             button.image = NSImage(systemSymbolName: name, accessibilityDescription: description)
             button.image?.isTemplate = true
@@ -76,6 +80,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(statusLine)
         dictateItem = item("Start dictation", #selector(toggleDictation))
         menu.addItem(dictateItem)
+        // A quiet mention only: nothing opens until this is chosen.
+        if let release = model.updater?.pendingNotice {
+            menu.addItem(item("uiui \(release.version) is available · Review…", #selector(reviewUpdate)))
+        }
         menu.addItem(.separator())
 
         copyLastItem = item("Copy last dictation", #selector(copyLast))
@@ -123,6 +131,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func openSettings() { actions.openSettings() }
     @objc private func openSetupGuide() { actions.openSetupGuide() }
     @objc private func checkForUpdates() { actions.checkForUpdates() }
+    @objc private func reviewUpdate() { actions.reviewUpdate() }
     @objc private func quit() { actions.quit() }
 
     /// For tests and the debug preview: the menu's visible titles in order.

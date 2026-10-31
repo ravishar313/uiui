@@ -1,9 +1,10 @@
 import AppKit
 import ApplicationServices
 import Carbon
+import Observation
 
 struct DeliveryTarget {
-    fileprivate let application: NSRunningApplication
+    let application: NSRunningApplication
     var appName: String? { application.localizedName }
     var appPID: pid_t { application.processIdentifier }
 }
@@ -19,12 +20,16 @@ enum DeliveryResult {
 protocol TextDelivering: AnyObject {
     func deliver(_ text: String, to target: DeliveryTarget?) async -> DeliveryResult
     func cancel()
-    /// One Command-Z to the app that received the last paste. False when it cannot be sent safely.
-    func undoPaste(to target: DeliveryTarget) -> Bool
+    /// Evidence about the paste just sent, or nil when Undo can never be proven safe for it.
+    func pasteUndoProof() -> PasteUndoProof?
+    /// One Command-Z to the app that received the paste, only while `proof` still holds.
+    /// False when it cannot be sent safely; nothing is sent then.
+    func undoPaste(to target: DeliveryTarget, proof: PasteUndoProof, invokedByClick: Bool) -> Bool
 }
 
 extension TextDelivering {
-    func undoPaste(to target: DeliveryTarget) -> Bool { false }
+    func pasteUndoProof() -> PasteUndoProof? { nil }
+    func undoPaste(to target: DeliveryTarget, proof: PasteUndoProof, invokedByClick: Bool) -> Bool { false }
 }
 
 /// Owns a single normal paste after dictation stops. Accessibility is read-only:
@@ -35,6 +40,7 @@ final class TextDelivery: TextDelivering {
     private var generation: UInt64 = 0
     private let payloadGate: PastePayloadGate
     private var leaseTask: Task<Void, Never>?
+    private var undoProof: PasteUndoProof?
     private let dependencies: TextDeliveryDependencies
 
     init(dependencies: TextDeliveryDependencies? = nil, payloadGate: PastePayloadGate? = nil) {
@@ -81,6 +87,7 @@ final class TextDelivery: TextDelivering {
 
     func deliver(_ text: String, to target: DeliveryTarget?) async -> DeliveryResult {
         guard !text.isEmpty else { return .held("There is no text to paste.") }
+        undoProof = nil // A newer delivery makes any earlier paste's Undo meaningless.
         let token = generation
         guard !Task.isCancelled else { return .held("Paste cancelled. Your text is available to copy.") }
         // A queued dictation must not replace a payload that an earlier posted
@@ -157,7 +164,12 @@ final class TextDelivery: TextDelivering {
         // Clipboard state and another process's key handling are not atomic.
         // The guard prevents known newer copies before dispatch; the 400ms lease
         // protects against our own next delivery, never against a user's copy.
+        // Focus and text length are read before the key goes out, so the later
+        // read can show whether this paste, and only it, changed the field.
+        let proof = prepared.beginUndoProof(text)
         prepared.post()
+        proof?.markPosted()
+        undoProof = proof
 
         // Return immediately after dispatch. The lease alone survives for 400ms;
         // it never restores old clipboard data or overwrites a newer user copy.
@@ -166,6 +178,8 @@ final class TextDelivery: TextDelivering {
             await dependencies.waitForPasteConsumption()
             leaseTask = nil
             payloadGate.release(lease)
+            // Insertion is confirmed after the lease is free, never delaying the next paste.
+            await proof?.verify()
         }
         return .pasteSent
     }
@@ -211,7 +225,8 @@ final class TextDelivery: TextDelivering {
                     // key-equivalent routing perform standard Command-V handling.
                     // The foreground app is rechecked immediately before this.
                     post: { down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap) },
-                    canDispatch: { Self.physicalModifiersAreReleased && Self.secureInputBlockReason(for: target) == nil && Self.matchesForegroundApp(target) }
+                    canDispatch: { Self.physicalModifiersAreReleased && Self.secureInputBlockReason(for: target) == nil && Self.matchesForegroundApp(target) },
+                    beginUndoProof: { pasted in Self.beginNativeUndoProof(for: target, pasted: pasted) }
                 ))
             },
             waitForPasteConsumption: {
@@ -236,11 +251,15 @@ final class TextDelivery: TextDelivering {
     /// Invalidates pending dispatches; a previously sent paste retains its consumption lease.
     func cancel() { generation &+= 1 }
 
+    func pasteUndoProof() -> PasteUndoProof? { undoProof }
+
     /// Posts exactly one Command-Z through the same layout-aware, hardware-stream
-    /// path as paste, and only while the destination app is still frontmost.
-    /// It never sends Return or any other key.
-    func undoPaste(to target: DeliveryTarget) -> Bool {
-        guard AXIsProcessTrusted(), CGPreflightPostEventAccess(),
+    /// path as paste, and only while the proof still holds: same app frontmost, same
+    /// focused element with unchanged text and selection, and no key or mouse-down
+    /// since the paste. It never sends Return or any other key. When unsure: nothing.
+    func undoPaste(to target: DeliveryTarget, proof: PasteUndoProof, invokedByClick: Bool) -> Bool {
+        guard proof === undoProof, proof.isSafeToUndo(invokedByClick: invokedByClick),
+              AXIsProcessTrusted(), CGPreflightPostEventAccess(),
               Self.matchesForegroundApp(target), Self.physicalModifiersAreReleased,
               Self.secureInputBlockReason(for: target) == nil else { return false }
         let zKey = Self.commandKeyCode(for: "z", ansiFallback: 6)
@@ -250,7 +269,69 @@ final class TextDelivery: TextDelivering {
         down.flags = .maskCommand
         up.flags = []
         down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
+        undoProof = nil
         return true
+    }
+
+    // MARK: Paste evidence (read-only Accessibility, aggregate event ages)
+
+    private struct ElementKey: Hashable {
+        let element: AXUIElement
+        static func == (a: Self, b: Self) -> Bool { CFEqual(a.element, b.element) }
+        func hash(into hasher: inout Hasher) { hasher.combine(CFHash(element)) }
+    }
+
+    /// Longest text read back to confirm an insertion; larger fields count as unverifiable.
+    private static let verifiableValueLimit = 2_000_000
+
+    /// The focused element, its text length and selection. Text is read only to
+    /// measure it and look for the pasted string; it is never stored or logged.
+    private static func focusSnapshot(in app: NSRunningApplication, pasted: String?) -> PasteFocusSnapshot? {
+        guard AXIsProcessTrusted(), let element = focusedElement(in: app) else { return nil }
+        let attributes = readAttributes(in: element, keys: [kAXSubroleAttribute, NSAccessibility.Attribute.containsProtectedContent.rawValue])
+        guard attributes[kAXSubroleAttribute] as? String != kAXSecureTextFieldSubrole,
+              attributes[NSAccessibility.Attribute.containsProtectedContent.rawValue] as? Bool != true else { return nil }
+        var snapshot = PasteFocusSnapshot(element: ElementKey(element: element), pid: app.processIdentifier)
+        var value: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success, let string = value as? String {
+            let length = (string as NSString).length
+            if length <= verifiableValueLimit {
+                snapshot.valueLength = length
+                if let pasted { snapshot.containsPasted = (string as NSString).range(of: pasted).location != NSNotFound }
+            }
+        }
+        var selection: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &selection) == .success,
+           let selection, CFGetTypeID(selection) == AXValueGetTypeID() {
+            var range = CFRange()
+            if AXValueGetValue(selection as! AXValue, .cfRange, &range) {
+                snapshot.selectedLocation = range.location
+                snapshot.selectedLength = range.length
+            }
+        }
+        return snapshot
+    }
+
+    /// Seconds since the last key-down and the last mouse-down. These are the system's
+    /// aggregate counters: no event is observed, no key is read, nothing is logged.
+    private static func inputAges() -> PasteUndoPolicy.InputAges {
+        let state = CGEventSourceStateID.combinedSessionState
+        let mouse = [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown]
+            .map { CGEventSource.secondsSinceLastEventType(state, eventType: $0) }.min() ?? .infinity
+        return .init(key: CGEventSource.secondsSinceLastEventType(state, eventType: .keyDown), mouse: mouse)
+    }
+
+    private static func beginNativeUndoProof(for target: DeliveryTarget, pasted: String) -> PasteUndoProof? {
+        let application = target.application
+        let before = focusSnapshot(in: application, pasted: nil)
+        let probes = PasteUndoProbes(
+            uptime: { ProcessInfo.processInfo.systemUptime },
+            inputAges: { inputAges() },
+            frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+            snapshot: { checkingPasted in focusSnapshot(in: application, pasted: checkingPasted ? pasted : nil) },
+            sleep: { try? await Task.sleep(for: .seconds($0)) }
+        )
+        return PasteUndoProof(probes: probes, targetPID: target.appPID, before: before, pastedLength: (pasted as NSString).length)
     }
 
     @discardableResult
@@ -405,13 +486,18 @@ struct TextDeliveryDependencies {
         let validate: @MainActor () -> Bool
         let post: @MainActor () -> Void
         let canDispatch: @MainActor () -> Bool
+        /// Called just before `post` with the text being pasted. Nil means this paste
+        /// can never be offered an Undo.
+        let beginUndoProof: @MainActor (String) -> PasteUndoProof?
 
         init(validate: @escaping @MainActor () -> Bool,
              post: @escaping @MainActor () -> Void,
-             canDispatch: @escaping @MainActor () -> Bool = { true }) {
+             canDispatch: @escaping @MainActor () -> Bool = { true },
+             beginUndoProof: @escaping @MainActor (String) -> PasteUndoProof? = { _ in nil }) {
             self.validate = validate
             self.post = post
             self.canDispatch = canDispatch
+            self.beginUndoProof = beginUndoProof
         }
     }
     enum Preparation {
@@ -512,5 +598,131 @@ struct ClipboardWriteOperations {
                 for marker in markers { pasteboard.setData(Data(), forType: marker) }
             }
         )
+    }
+}
+
+// MARK: Undo evidence
+
+/// The focused element and what can be read of its text, without keeping the text.
+struct PasteFocusSnapshot: Equatable {
+    var element: AnyHashable?
+    var pid: pid_t
+    /// UTF-16 length of the field's text, nil when unreadable or too large.
+    var valueLength: Int?
+    var selectedLocation: Int?
+    var selectedLength: Int?
+    /// Only set when the read looked for the pasted string.
+    var containsPasted: Bool?
+
+    init(element: AnyHashable? = nil, pid: pid_t, valueLength: Int? = nil, selectedLocation: Int? = nil,
+         selectedLength: Int? = nil, containsPasted: Bool? = nil) {
+        self.element = element; self.pid = pid; self.valueLength = valueLength
+        self.selectedLocation = selectedLocation; self.selectedLength = selectedLength; self.containsPasted = containsPasted
+    }
+}
+
+/// Pure rules for when Command-Z may be offered or sent. Nothing here reads the OS.
+enum PasteUndoPolicy {
+    struct InputAges: Equatable { var key: TimeInterval; var mouse: TimeInterval }
+
+    /// Slack for our own synthetic Command-V being registered a moment after it is posted.
+    static let tolerance: TimeInterval = 0.3
+    /// A mouse-down this recent may be the click on Undo itself.
+    static let ownClickAllowance: TimeInterval = 1.0
+
+    /// A key went down after the paste. Our own Command-V registers at the paste, so
+    /// without a later key the age is at least the time since the paste.
+    static func keyPressedSince(keyAge: TimeInterval, elapsed: TimeInterval) -> Bool {
+        keyAge < elapsed - tolerance
+    }
+
+    /// A mouse button went down after the paste, other than the click on Undo.
+    static func mouseDownSince(baselineAge: TimeInterval, nowAge: TimeInterval, elapsed: TimeInterval, mayBeOwnClick: Bool) -> Bool {
+        if mayBeOwnClick, nowAge <= ownClickAllowance { return false }
+        return nowAge < baselineAge + elapsed - tolerance
+    }
+
+    /// The text grew by exactly what was pasted (less any selection it replaced) and
+    /// contains it, in the same element. Unreadable text is unverified, never assumed.
+    static func insertionVerified(before: PasteFocusSnapshot?, after: PasteFocusSnapshot?, pastedLength: Int) -> Bool {
+        guard let before, let after, before.element != nil, before.element == after.element,
+              let oldLength = before.valueLength, let newLength = after.valueLength,
+              after.containsPasted == true, pastedLength > 0 else { return false }
+        return newLength - oldLength == pastedLength - (before.selectedLength ?? 0)
+    }
+
+    /// Same app in front, same element, and its text and selection exactly as the paste left them.
+    static func contextUnchanged(reference: PasteFocusSnapshot, now: PasteFocusSnapshot?, frontmostPID: pid_t?, targetPID: pid_t) -> Bool {
+        guard let now, frontmostPID == targetPID, now.pid == targetPID,
+              now.element != nil, now.element == reference.element else { return false }
+        return now.valueLength == reference.valueLength && reference.valueLength != nil
+            && now.selectedLocation == reference.selectedLocation && now.selectedLength == reference.selectedLength
+            && now.selectedLocation != nil
+    }
+}
+
+/// How the proof reads the world. Native probes use Accessibility and aggregate
+/// event ages; tests supply values.
+struct PasteUndoProbes {
+    var uptime: @MainActor () -> TimeInterval
+    var inputAges: @MainActor () -> PasteUndoPolicy.InputAges
+    var frontmostPID: @MainActor () -> pid_t?
+    var snapshot: @MainActor (_ checkingPasted: Bool) -> PasteFocusSnapshot?
+    var sleep: @MainActor (TimeInterval) async -> Void
+}
+
+/// Evidence for one posted paste. Undo is safe only when insertion was confirmed and
+/// nothing has touched the field or the keyboard and mouse since. Event-driven: it
+/// reads state when the paste is confirmed and when Undo is offered or used.
+@MainActor @Observable
+final class PasteUndoProof {
+    enum Insertion: Equatable { case pending, verified, unverified }
+    private(set) var insertion: Insertion = .pending
+
+    @ObservationIgnored private let probes: PasteUndoProbes
+    @ObservationIgnored private let targetPID: pid_t
+    @ObservationIgnored private let before: PasteFocusSnapshot?
+    @ObservationIgnored private let pastedLength: Int
+    @ObservationIgnored private var reference: PasteFocusSnapshot?
+    @ObservationIgnored private var postedAt: TimeInterval?
+    @ObservationIgnored private var mouseAgeAtPost: TimeInterval = 0
+
+    init(probes: PasteUndoProbes, targetPID: pid_t, before: PasteFocusSnapshot?, pastedLength: Int) {
+        self.probes = probes; self.targetPID = targetPID; self.before = before; self.pastedLength = pastedLength
+    }
+
+    /// Call immediately after the paste key is posted.
+    func markPosted() {
+        postedAt = probes.uptime()
+        mouseAgeAtPost = probes.inputAges().mouse
+    }
+
+    /// Confirms insertion by reading the field back, a few bounded times after the paste.
+    func verify(retryDelays: [TimeInterval] = [0, 0.3, 0.3]) async {
+        guard insertion == .pending else { return }
+        guard before != nil, postedAt != nil else { insertion = .unverified; return }
+        for delay in retryDelays {
+            if delay > 0 { await probes.sleep(delay) }
+            let after = probes.snapshot(true)
+            if PasteUndoPolicy.insertionVerified(before: before, after: after, pastedLength: pastedLength), let after {
+                reference = after
+                insertion = .verified
+                return
+            }
+        }
+        insertion = .unverified
+    }
+
+    /// True only if insertion was confirmed and nothing has changed since. Cheap
+    /// checks run first; the field is read only if they pass.
+    func isSafeToUndo(invokedByClick: Bool) -> Bool {
+        guard insertion == .verified, let reference, let postedAt else { return false }
+        let elapsed = max(0, probes.uptime() - postedAt)
+        let ages = probes.inputAges()
+        guard !PasteUndoPolicy.keyPressedSince(keyAge: ages.key, elapsed: elapsed),
+              !PasteUndoPolicy.mouseDownSince(baselineAge: mouseAgeAtPost, nowAge: ages.mouse, elapsed: elapsed, mayBeOwnClick: invokedByClick),
+              probes.frontmostPID() == targetPID else { return false }
+        return PasteUndoPolicy.contextUnchanged(reference: reference, now: probes.snapshot(false),
+                                                frontmostPID: probes.frontmostPID(), targetPID: targetPID)
     }
 }

@@ -217,6 +217,55 @@ final class NotchNativeStylesTests: XCTestCase {
         XCTAssertEqual(String(NotchWordsText.attributed("one two  three").characters), "one two three")
     }
 
+    func testWordsStylingCoversOnlyATailWindowAndKeepsTheText() {
+        let words = (0..<100_000).map { "w\($0)" }
+        let long = words.joined(separator: " ")
+        let clock = ContinuousClock()
+        var styled = AttributedString()
+        let longTime = clock.measure { styled = NotchWordsText.attributed(long) }
+        XCTAssertEqual(String(styled.characters), long, "Older text is untouched")
+        // One plain run for everything older, then one run per tail word.
+        XCTAssertEqual(styled.runs.count, NotchWordsText.fadeWords + 1)
+        let shortTime = clock.measure { _ = NotchWordsText.attributed("one two three four five six seven eight nine ten") }
+        print("WORDS_MEASURED words=100000 styled_runs=\(styled.runs.count) long=\(longTime) short=\(shortTime)")
+        // The newest word carries the accent and the sixth from the end is the plain base colour.
+        let runs = Array(styled.runs)
+        XCTAssertEqual(runs.last.map { String(styled[$0.range].characters) }, "w99999")
+        XCTAssertEqual(runs.last?.foregroundColor, NotchWordsText.blend(1))
+        XCTAssertEqual(runs.first?.foregroundColor, NotchWordsText.blend(0), "The plain head shares the base colour")
+        XCTAssertEqual(NotchWordsText.tailStart(in: ""), "".startIndex)
+        XCTAssertEqual(String(NotchWordsText.attributed("  alpha   beta ").characters), "alpha beta")
+    }
+
+    func testRollingLineKeepsOnlyTheEndOfALongTranscript() {
+        let long = (0..<50_000).map { "word\($0)" }.joined(separator: " ")
+        let tail = NotchWordsText.rollingTail(of: long)
+        XCTAssertLessThanOrEqual(tail.count, NotchWordsText.rollingLineCharacters)
+        XCTAssertTrue(tail.hasSuffix("word49999"))
+        XCTAssertEqual(NotchWordsText.rollingTail(of: "short  text\nhere"), "short text here")
+    }
+
+    func testHoverTranscriptFollowsOnlyWhileAtTheBottom() {
+        var follow = NotchTranscriptFollow()
+        // First layout: scroll to the end.
+        XCTAssertTrue(follow.update(contentHeight: 300, offset: 200, viewportHeight: 100))
+        // New words arrive while at the bottom: follow.
+        XCTAssertTrue(follow.update(contentHeight: 330, offset: 200, viewportHeight: 100))
+        XCTAssertFalse(follow.update(contentHeight: 330, offset: 230, viewportHeight: 100), "The scroll to the end landed")
+        XCTAssertTrue(follow.following)
+        // The person scrolls up: following stops.
+        XCTAssertFalse(follow.update(contentHeight: 330, offset: 120, viewportHeight: 100))
+        XCTAssertFalse(follow.following)
+        // More words: no snap to the bottom.
+        XCTAssertFalse(follow.update(contentHeight: 360, offset: 120, viewportHeight: 100))
+        XCTAssertFalse(follow.update(contentHeight: 390, offset: 120, viewportHeight: 100))
+        XCTAssertFalse(follow.following)
+        // Back to the bottom: following resumes, and the next words are followed.
+        XCTAssertFalse(follow.update(contentHeight: 390, offset: 290, viewportHeight: 100))
+        XCTAssertTrue(follow.following)
+        XCTAssertTrue(follow.update(contentHeight: 420, offset: 290, viewportHeight: 100))
+    }
+
     func testAnnouncementsNeverContainTranscript() {
         XCTAssertEqual(NotchAnnouncement.resolve(phase: .recording, paused: false, cannotHear: false), .listening)
         XCTAssertEqual(NotchAnnouncement.resolve(phase: .recording, paused: true, cannotHear: false), .paused)
@@ -310,6 +359,53 @@ final class NotchPauseTests: XCTestCase {
     }
 
     @MainActor
+    func testPausedStateShowsOnHomeAndTheMenuBar() async throws {
+        let (model, capture, _) = try await fixture()
+        try await startCapture(model, capture)
+        XCTAssertEqual(model.voiceStatusSummary, "Recording")
+        XCTAssertFalse(model.isVoicePaused)
+        model.pauseVoiceCapture()
+        XCTAssertTrue(model.isVoicePaused)
+        XCTAssertEqual(model.voiceStatusSummary, "Paused · not transcribing")
+        XCTAssertTrue(model.microphoneIsActive, "The microphone is still open while paused; the text must not claim otherwise")
+        XCTAssertEqual(StatusMenuController.symbolName(paused: model.isVoicePaused, active: model.microphoneIsActive), "pause.circle.fill")
+        XCTAssertEqual(StatusMenuController.symbolName(paused: false, active: true), "mic.fill")
+        model.resumeVoiceCapture()
+        XCTAssertEqual(model.voiceStatusSummary, "Recording")
+    }
+
+    @MainActor
+    func testPauseIsUnavailableWithTheNotchOffButAnExistingPauseCanBeResumed() async throws {
+        let (model, capture, _) = try await fixture()
+        model.settings.notchEnabled = false
+        try await startCapture(model, capture)
+        XCTAssertFalse(model.canPauseVoiceCapture, "Nothing would show the pause, so the hot key is not offered")
+        model.pauseVoiceCapture()
+        XCTAssertEqual(capture.pauseCalls, 0)
+        XCTAssertFalse(model.voice.isPaused)
+        // Turned off after pausing: the person can still get out of it.
+        model.settings.notchEnabled = true
+        model.pauseVoiceCapture()
+        XCTAssertTrue(model.voice.isPaused)
+        model.settings.notchEnabled = false
+        XCTAssertTrue(model.canPauseVoiceCapture)
+        model.toggleVoicePause()
+        XCTAssertFalse(model.voice.isPaused)
+    }
+
+    @MainActor
+    func testPauseIsUnavailableWhenTheEngineIsNotProvenSafe() async throws {
+        let (model, capture, _) = try await fixture()
+        capture.supportsPause = false
+        try await startCapture(model, capture)
+        XCTAssertFalse(model.canPauseVoiceCapture)
+        model.pauseVoiceCapture()
+        model.toggleVoicePause()
+        XCTAssertEqual(capture.pauseCalls, 0)
+        XCTAssertFalse(model.voice.isPaused)
+    }
+
+    @MainActor
     func testPauseThenFinishDeliversExactlyOnce() async throws {
         let (model, capture, delivery) = try await fixture()
         try await startCapture(model, capture)
@@ -400,6 +496,7 @@ private final class PauseCapture: TriggeredVoiceCapture {
         cancelCount += 1
         let pending = startup; startup = nil; pending?.resume(throwing: CancellationError())
     }
+    var supportsPause = true
     func setPaused(_ value: Bool) -> Bool { pauseCalls += 1; paused = value; return true }
     func emitFinal(_ text: String) {
         onCompletion?(SpeechCompletion(text: text, reason: .final, wasExplicitlyStopped: true))
@@ -412,7 +509,9 @@ private final class PauseDelivery: TextDelivering {
     private(set) var undoCount = 0
     func deliver(_ text: String, to target: DeliveryTarget?) async -> DeliveryResult { delivered.append(text); return .pasteSent }
     func cancel() {}
-    func undoPaste(to target: DeliveryTarget) -> Bool { undoCount += 1; return true }
+    var proof: PasteUndoProof?
+    func pasteUndoProof() -> PasteUndoProof? { proof }
+    func undoPaste(to target: DeliveryTarget, proof: PasteUndoProof, invokedByClick: Bool) -> Bool { undoCount += 1; return true }
 }
 
 @MainActor
