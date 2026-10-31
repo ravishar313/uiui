@@ -63,7 +63,7 @@ final class VoiceSpellingTests: XCTestCase {
     @MainActor
     func testConfirmedCanonicalKiranSpellingSurvivesCleanupCasing() async throws {
         let delivery = SpellingDelivery(), cleanup = SpellingCleanup()
-        cleanup.result = "LAUKI said okay"
+        cleanup.result = "KIRAN said okay"
         let model = try model(delivery: delivery, cleanup: cleanup)
         model.settings.saveDictationHistory = false
         XCTAssertTrue(model.addVocabulary(heard: "locky", replacement: "Kiran", project: "All projects"))
