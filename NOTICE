@@ -1,0 +1,9 @@
+uiui
+Copyright 2026 uiui contributors
+
+Source code in this repository is licensed under the Apache License, Version 2.0,
+except for vendored components under Vendor/, which keep their own licences.
+
+Model weights are not covered by the source licence:
+  uiui S1  CC-BY-SA-4.0, see resources/Phonon/NOTICE
+  uiui P1  MIT, see resources/MiniLM/NOTICE.txt

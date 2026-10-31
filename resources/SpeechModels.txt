@@ -1,11 +1,11 @@
-Selected English speech model (macOS 15+): Phonon-2 Core ML, uiui Indian English + Hinglish fine-tune (full-1029 step 16000, 4-bit encoder, float16 decoder)
-Repository: uiui/Phonon-2-HL (base: FermionResearch/Phonon-2-CoreML 48af304c8db8bcc25307c206c199612f48479954)
+Selected speech model (macOS 15+): uiui S1, Indian English + Hinglish fine-tune of Phonon-2 Core ML (full-1029 step 16000, 4-bit encoder, float16 decoder)
+Repository: uiui/S1 (base: FermionResearch/Phonon-2-CoreML 48af304c8db8bcc25307c206c199612f48479954)
 Revision: full-1029-s16000-f16
 Container SHA256: 1ebefdb308a1b4f4b3fd8df86b1340cb6934b4c935f4c97386ba7119c07ff249
 Native runtime: phonon-coreml 1.1.2 / bf59e574639b060e30ee1a3f9c0e003fed5744c8
 Core ML cpuAndNeuralEngine, single loaded 15-second function; one decoder worker and one encoder in-flight.
 Models shipped precompiled and hash-verified; capture never compiles or downloads.
-Weights CC-BY-4.0, runtime Apache-2.0. Attribution and licenses in Phonon/.
+Weights CC-BY-SA-4.0 (base model CC-BY-4.0), runtime Apache-2.0. Attribution and licenses in Phonon/.
 macOS 14 compatibility fallback and historical baseline follows.
 
 uiui local speech recognition
@@ -24,7 +24,7 @@ Source: https://github.com/FluidInference/FluidAudio
 Revision: 503b4bd1bbf7220882de39fe8ae6716aae4132da
 License: Apache License 2.0 (included as FluidAudio-LICENSE.txt)
 
-Local punctuation and capitalization: uiui-adapted multilingual MiniLM v2
+Local punctuation and capitalization: uiui P1, adapted from multilingual MiniLM v2
 Base source: https://huggingface.co/ldenoue/punctuator-multilingual-minilm-v2
 Base revision: 970138a82387e72360e9e3591cd5237a9f47ec5c
 Publisher model-card license: MIT (see MiniLM/MODEL-CARD.md)

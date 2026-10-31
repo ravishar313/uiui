@@ -1,5 +1,5 @@
 {
-  "repository": "uiui/Phonon-2-HL",
+  "repository": "uiui/S1",
   "revision": "full-1029-s16000-f16",
   "container_sha256": "1ebefdb308a1b4f4b3fd8df86b1340cb6934b4c935f4c97386ba7119c07ff249",
   "files": [
@@ -14,9 +14,14 @@
       "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
     },
     {
+      "path": "LICENSE-WEIGHTS-CC-BY-SA-4.0.txt",
+      "bytes": 20138,
+      "sha256": "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5"
+    },
+    {
       "path": "NOTICE",
-      "bytes": 4775,
-      "sha256": "ea79ea3b806b998bb6486486c23e24aaf10f99d5668361e4e901db3c3942d308"
+      "bytes": 4866,
+      "sha256": "edd52e81f3ce491e5ed37e21fbb10c51880b98c8fea463fe02b52c7223a1c5ce"
     },
     {
       "path": "Phonon-2.mlmodelc/analytics/coremldata.bin",
@@ -40,8 +45,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 830,
-      "sha256": "bc371a682708cf9e64b4f9c0074a396f02c2e6fbe661d3af33a04a8c7feea0db"
+      "bytes": 1051,
+      "sha256": "ff7c3af06e307fe32953e7e227047a34e297d7e8ef5fe701595de868574a7801"
     },
     {
       "path": "decoder.bin",

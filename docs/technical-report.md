@@ -1,4 +1,4 @@
-# Phonon-2-HL: on-device speech recognition for Indian professionals
+# uiui S1 and uiui P1: on-device dictation models for Indian professionals
 
 Technical report, 31 October 2026. Model revision `full-1029-s16000-f16`.
 
@@ -10,7 +10,7 @@ Starting from NVIDIA Parakeet TDT 0.6B v3, by way of Fermion Research's Phonon-2
 
 **What we achieved**
 
-| Word error rate %, lower is better | Parakeet v3 | Phonon-2-HL | Change |
+| Word error rate %, lower is better | Parakeet v3 | uiui S1 | Change |
 |---|---|---|---|
 | Indian English (our dev-select set) | 25.98 | 9.93 | -16.05 |
 | Hinglish (dev-select) | 82.24 | 21.88 | -60.36 |
@@ -28,6 +28,15 @@ Starting from NVIDIA Parakeet TDT 0.6B v3, by way of Fermion Research's Phonon-2
 - Native English is slightly worse than the base model.
 - Post-processing does not yet improve on the speech model's own output. It only stopped doing harm (section 7).
 - **Licensing of some inherited and training data is unresolved. Read section 9 before any commercial use.**
+
+## Models and origins
+
+| uiui name | What it is | Built from | Licence |
+|---|---|---|---|
+| **uiui S1** | Speech recognition | [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (CC-BY-4.0), through Fermion Research's [Phonon-2](https://huggingface.co/FermionResearch/Phonon-2) and [Phonon-2 Core ML](https://huggingface.co/FermionResearch/Phonon-2-CoreML) (CC-BY-4.0) | CC-BY-SA-4.0 |
+| **uiui P1** | Punctuation and casing | [punctuator-multilingual-minilm-v2](https://huggingface.co/ldenoue/punctuator-multilingual-minilm-v2) by ldenoue (MIT) | MIT |
+
+uiui S1 is retrained and re-quantised, but keeps the base model's architecture, tokenizer and feature extraction. It runs on Fermion Research's [phonon-coreml](https://github.com/FermionResearch/phonon-coreml) runtime (Apache-2.0), vendored here with our changes. Code identifiers and folders still use the names `Phonon` and `MiniLM`. uiui S1 is unrelated to Superwhisper's S1-mini.
 
 ## 1. Goal and constraints
 
@@ -129,7 +138,7 @@ Public test subsets of 150 clips each, on an Apple M5 Pro. Word error rate %. Di
 
 | Model | Svarah | Monsoon | LibriSpeech | FLEURS en | MUCS | Hindi accents | FLEURS hi | Disk |
 |---|---|---|---|---|---|---|---|---|
-| **Phonon-2-HL (ours)** | 12.94 | 7.01 | 2.24 | 6.40 | **41.31** | 28.93 | 30.31 | 0.38 GB |
+| **uiui S1 (ours)** | 12.94 | 7.01 | 2.24 | 6.40 | **41.31** | 28.93 | 30.31 | 0.38 GB |
 | Phonon-2 original | 18.86 | 8.01 | 2.43 | 7.27 | 87.54 | 77.94 | 88.76 | 0.33 GB |
 | Parakeet v3 (fp32) | 16.59 | 6.98 | 2.27 | 4.56 | 87.17 | 77.70 | 90.27 | 2.5 GB |
 | Whisper large-v3 auto | 12.5 | 5.8 | 3.0 | 4.2 | 70.4 | 39.7 | 37.5 | 3.1 GB |
@@ -142,7 +151,7 @@ Public test subsets of 150 clips each, on an Apple M5 Pro. Word error rate %. Di
 
 Forcing English helps Qwen 1.7B on MUCS (45.6), which is still above ours. Forcing English on Whisper makes its Hindi and Hinglish results far worse.
 
-**On our own larger test (dev-select, 2,294 clips, S):** Phonon-2-HL 15.47, Qwen 1.7B 16.01, Qwen 0.6B 17.98, Whisper large-v3 auto 23.99, Whisper turbo auto 25.65, Parakeet v3 44.98. This test was designed around our target users and was used to select our model, so it favours us. Qwen 1.7B stays well ahead on Hindi (19.41 against 26.59) and native English (2.03 against 3.79).
+**On our own larger test (dev-select, 2,294 clips, S):** uiui S1 15.47, Qwen 1.7B 16.01, Qwen 0.6B 17.98, Whisper large-v3 auto 23.99, Whisper turbo auto 25.65, Parakeet v3 44.98. This test was designed around our target users and was used to select our model, so it favours us. Qwen 1.7B stays well ahead on Hindi (19.41 against 26.59) and native English (2.03 against 3.79).
 
 **Speed.** Across six of the seven public sets the model ran at about 173 times real time on the Neural Engine, and 201 times on our 600-clip A/B set. The first set ran at 34 times, most likely because it includes model loading, so we exclude it. The earlier 132 times figure for full-1028 came from a different run. Other models ran in batches of 8 on the GPU, so speed is not strictly like for like; in a batch-of-1 probe, Qwen 0.6B reached 29.5 times and Qwen 1.7B 16.3 times.
 
@@ -165,7 +174,7 @@ Measured on 600 real app transcripts, on correctly recognised words (higher is b
 **How the app works now**
 
 1. If a transcript contains both a capital letter and punctuation, it is treated as formatted. The cleanup model is skipped, and only a light final punctuation pass runs (88.3 punctuation F1).
-2. Otherwise, the text goes through the bundled MiniLM tagger (`ft3`), which adds punctuation and casing without changing words, and then the final pass.
+2. Otherwise, the text goes through uiui P1 (revision `ft3`), which adds punctuation and casing without changing words, and then the final pass.
 
 The tagger is a 34 MB per-channel INT8 classifier. Retraining it took Hinglish punctuation F1 on clean text from 52 to 89, but normal Phonon output now bypasses it. It remains for unformatted text.
 
@@ -202,13 +211,13 @@ Short experiments often could not show gains that the full runs later delivered.
 
 ## 9. Licences and open questions
 
-**Runtime and base.** Parakeet and Phonon-2 weights are CC-BY-4.0. The Phonon runtime and FluidAudio are Apache-2.0. Silero VAD and ONNX Runtime are MIT. SentencePiece and Indic Parler-TTS are Apache-2.0. Attribution is in `resources/Phonon/NOTICE` and `Vendor/MiniLM/licenses`.
+**Runtime and base.** Source code is Apache-2.0. uiui S1 weights are CC-BY-SA-4.0, uiui P1 is MIT. Parakeet and Phonon-2 weights are CC-BY-4.0. The Phonon runtime and FluidAudio are Apache-2.0. Silero VAD and ONNX Runtime are MIT. SentencePiece and Indic Parler-TTS are Apache-2.0. Attribution is in `resources/Phonon/NOTICE` and `Vendor/MiniLM/licenses`.
 
-**Unresolved. These need a human or legal decision before commercial distribution:**
+We chose CC-BY-SA-4.0 for uiui S1 because share-alike data went into training, and CC-BY material can be included under it. **A licence we choose can only grant rights we hold, so it cannot settle the questions below.** They need a human or legal decision, especially before commercial use:
 
 1. **SPGISpeech, inherited from upstream.** Phonon-2's notice lists SPGISpeech as training audio. Its Hugging Face page describes the content as for academic research and internal use only, and it doesn't directly address trained models. This is the most serious open question, and it comes from the base rather than from our own training.
 2. **NPTEL, 37% of our sampling.** Dataset publishers state CC-BY-4.0, but NPTEL's own licence is unclear. Secondary sources conflict between CC-BY-SA and CC-BY-NC-SA, so a non-commercial restriction hasn't been ruled out.
-3. **Share-alike data.** MUCS 2021 is CC-BY-SA-4.0, and upstream's CHiME-6 is too. Whether trained weights count as adaptations is unsettled.
+3. **Share-alike data.** MUCS 2021 is CC-BY-SA-4.0, and upstream's CHiME-6 is too. Whether trained weights count as adaptations is unsettled; our CC-BY-SA choice is meant to satisfy either answer.
 4. **Common Voice through a mirror.** Common Voice is generally CC0, but the mirror we used carries no licence field, and we could not confirm the release version.
 5. **Gated dataset terms.** We have not reviewed the access-form terms of the AI4Bharat and Vaani datasets beyond their CC tags.
 

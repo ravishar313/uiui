@@ -4,7 +4,7 @@ Private, on-device dictation for macOS, tuned for how Indian professionals actua
 
 Tap a key, speak, and the text is pasted where you were typing. Audio never leaves your Mac.
 
-- **Built for Indian speech:** a custom speech model, Phonon-2-HL, handles Indian English and Hindi-English mixing in Roman script.
+- **Built for Indian speech:** our speech model, uiui S1, handles Indian English and Hindi-English mixing in Roman script.
 - **Fast:** runs on the Apple Neural Engine at well over 100 times real time.
 - **Local:** no cloud fallback, no wake phrase, no background listening. The microphone is off between recordings.
 - **Native:** SwiftUI and AppKit, with no web runtime.
@@ -15,7 +15,7 @@ Word error rate %, lower is better. Public subsets of 150 clips per set, on an A
 
 | | Svarah (Indian English) | MUCS (Hinglish) | Hindi accents | LibriSpeech | Disk |
 |---|---|---|---|---|---|
-| **Phonon-2-HL** | 12.94 | **41.31** | 28.93 | 2.24 | 0.38 GB |
+| **uiui S1** | 12.94 | **41.31** | 28.93 | 2.24 | 0.38 GB |
 | Parakeet v3 | 16.59 | 87.17 | 77.70 | 2.27 | 2.5 GB |
 | Whisper turbo (auto) | 12.0 | 72.2 | 57.1 | 2.3 | 1.6 GB |
 | Qwen3-ASR-1.7B (auto) | 14.7 | 47.6 | **23.0** | **1.6** | 4.7 GB |
@@ -35,9 +35,9 @@ Larger models still win on pure Hindi and clearly read English. The [technical r
 
 | Model | Job | Runtime |
 |---|---|---|
-| Phonon-2-HL | Speech to text, with punctuation and casing | Core ML, Neural Engine and CPU, macOS 15+ |
-| Silero VAD | Trims non-speech tails | Core ML, CPU |
-| uiui MiniLM | Adds punctuation and casing only when the text has none | ONNX Runtime, CPU |
+| **uiui S1** | Speech to text, with punctuation and casing. Built from [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) through Fermion Research's [Phonon-2](https://huggingface.co/FermionResearch/Phonon-2) | Core ML, Neural Engine and CPU, macOS 15+ |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Trims non-speech tails | Core ML, CPU |
+| **uiui P1** | Adds punctuation and casing only when the text has none. Built from [punctuator-multilingual-minilm-v2](https://huggingface.co/ldenoue/punctuator-multilingual-minilm-v2) | ONNX Runtime, CPU |
 
 macOS 14 falls back to a Parakeet path, and other languages use Apple's on-device speech. Output that's already formatted skips the cleanup model.
 
@@ -75,4 +75,11 @@ Packaging and releases are described in [updates](docs/updates.md).
 
 ## Licences
 
-Model weights are CC-BY-4.0 and derive from NVIDIA Parakeet and Fermion Research's Phonon-2; see `resources/Phonon/NOTICE`. Vendored components keep their own licences. Some training-data licensing questions are still open, as listed in [section 9 of the report](docs/technical-report.md#9-licences-and-open-questions).
+| Part | Licence |
+|---|---|
+| uiui source code | [Apache-2.0](LICENSE) |
+| uiui S1 weights | CC-BY-SA-4.0, derived from CC-BY-4.0 models; see `resources/Phonon/NOTICE` |
+| uiui P1 weights | MIT; see `resources/MiniLM/NOTICE.txt` |
+| Vendored components | Their own licences, under `Vendor/` |
+
+Some training-data questions are still open and aren't settled by these licences, especially for commercial use. See [section 9 of the report](docs/technical-report.md#9-licences-and-open-questions).

@@ -10,6 +10,10 @@ tags:
 license: mit
 ---
 
+# uiui P1
+
+uiui P1 is the current name of this adapted model; current revision `ft3`. The notes below include its earlier history.
+
 # punctuator-multilingual-minilm-v2
 
 Non-generative multilingual punctuation and casing restoration model.

@@ -44,7 +44,7 @@ and SPGISpeech, used under Kensho's public terms
     https://datasets.kensho.com/datasets/spgispeech
 
 ================================================================================
-UIUI FINE-TUNE (Phonon-2-HL, full-1029 step 16000)
+UIUI S1 (revision full-1029-s16000-f16)
 ================================================================================
 
 The bundled weights are a further modification of Phonon-2 by the uiui project:
@@ -52,8 +52,9 @@ all encoder linear layers were re-trained with 4-bit quantisation-aware training
 (16-entry floating-point lookup tables per 16 output rows), and the decoder is
 stored as uncompressed 16-bit floating point. Statements above about five-value
 palettes and a 6-bit decoder describe the upstream package, not these weights.
-These modified weights are distributed under CC-BY-4.0, subject to the terms of
-the upstream material and the data sources below.
+uiui S1 weights are distributed under CC-BY-SA-4.0 as a cautious choice because
+share-alike data was used in training. This licence does not settle the upstream
+or data terms listed below; see section 9 of docs/technical-report.md.
 
 Additional training data, as stated by each publisher:
 

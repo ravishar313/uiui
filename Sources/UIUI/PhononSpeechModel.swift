@@ -5,7 +5,7 @@ import PhononCoreML
 /// The selected English recognizer. We ship pinned, precompiled assets: neither
 /// a trigger nor a warm checkout can download or compile a different model.
 enum PhononSpeechModel {
-    static let repository = "uiui/Phonon-2-HL"
+    static let repository = "uiui/S1"
     static let revision = "full-1029-s16000-f16"
     static let containerSHA256 = "1ebefdb308a1b4f4b3fd8df86b1340cb6934b4c935f4c97386ba7119c07ff249"
     static let modelDescription = "Phonon 2 · Neural Engine · on device"

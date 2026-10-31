@@ -16,7 +16,7 @@ def verify(directory):
     manifest = directory / 'assets.json'
     require(manifest.is_file() and 0 < manifest.stat().st_size <= 1048576)
     assets = json.loads(manifest.read_text())
-    require(assets['repository'] == 'uiui/Phonon-2-HL')
+    require(assets['repository'] == 'uiui/S1')
     require(assets['revision'] == 'full-1029-s16000-f16')
     require(assets['container_sha256'] == '1ebefdb308a1b4f4b3fd8df86b1340cb6934b4c935f4c97386ba7119c07ff249')
     files = assets['files']
