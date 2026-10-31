@@ -635,11 +635,7 @@ final class AppModel {
         settings.vocabulary = vocabulary
         return true
     }
-    private static func isValidVocabularyTerm(_ term: String) -> Bool {
-        let trimmed = term.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, term.count <= 120 else { return false }
-        return !term.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) || $0.properties.generalCategory == .format }
-    }
+    private static func isValidVocabularyTerm(_ term: String) -> Bool { VocabularyEntry.isValidTerm(term) }
     func exportNotes() {
         let panel = NSSavePanel(); panel.title = "Export your uiui library"; panel.nameFieldStringValue = "uiui-library.md"; panel.allowedContentTypes = [.plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }

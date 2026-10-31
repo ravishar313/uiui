@@ -48,6 +48,13 @@ public struct VocabularyEntry: Identifiable, Codable, Hashable, Sendable {
     /// Built-in spellings that always apply after the user's own entries, so a
     /// user entry for the same phrase wins. Speech models hear the app's name as
     /// letters or as two words.
+    /// A spoken or written form is one to 120 characters with no control or format characters.
+    public static func isValidTerm(_ term: String) -> Bool {
+        let trimmed = term.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, term.count <= 120 else { return false }
+        return !term.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) || $0.properties.generalCategory == .format }
+    }
+
     public static let builtIn: [VocabularyEntry] = ["UI UI", "U I U I", "U.I.U.I.", "U.I. U.I.", "UI-UI", "UIUI",
                                                     "you eye you eye", "you I you I"].map {
         VocabularyEntry(heard: $0, replacement: "uiui")

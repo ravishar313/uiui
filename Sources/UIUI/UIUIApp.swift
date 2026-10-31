@@ -9,6 +9,13 @@ struct UIUIBootstrap {
         // Test and developer commands exist only in debug builds. Release
         // binaries ignore these flags and always start the app.
         #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--app-preview") {
+            guard index + 1 < CommandLine.arguments.count else { print("APP_PREVIEW requires OUTPUT"); exit(2) }
+            do {
+                try await AppPreviewSmoke.run(output: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+                exit(0)
+            } catch { print("APP_PREVIEW failed: \(error.localizedDescription)"); exit(1) }
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--notch-handoff-preview") {
             guard index + 1 < CommandLine.arguments.count else { print("NOTCH_HANDOFF requires OUTPUT"); exit(2) }
             do {
@@ -150,7 +157,7 @@ struct UIUIBootstrap {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
     private var panels: PanelCoordinator?
-    private var statusItem: NSStatusItem?
+    private var statusMenu: StatusMenuController?
     private let shortcuts = GlobalShortcuts()
     private let updater = AppUpdater()
     private var speechWarmup: Task<Void, Never>?
@@ -177,6 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panels?.activityChanged()
             self?.refreshEscapeCancellation()
             self?.updater.activityChanged()
+            self?.statusMenu?.refreshState()
         }
         shortcuts.onVoicePressed = { [weak model] in model?.voiceTriggerPressed() }
         shortcuts.onVoiceReleased = { [weak model] in model?.voiceTriggerReleased() }
@@ -192,7 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.shortcuts.refreshGlobalAccess()
         }
         configureVoiceTrigger()
-        installStatusItem()
+        installStatusMenu()
         Task {
             await model.start()
             refreshSpeechWarmth()
@@ -242,24 +250,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { panels?.openHome(); return true }
 
-    private func installStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = item.button {
-            button.image = NSImage(systemSymbolName: "eyes", accessibilityDescription: "uiui")
-            button.image?.isTemplate = true; button.toolTip = "uiui · dictation, history and recovery"
-        }
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Start / finish voice", action: #selector(triggerVoice), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Open uiui", action: #selector(home), keyEquivalent: "")
-        menu.addItem(withTitle: "History", action: #selector(library), keyEquivalent: "")
-        menu.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",")
-        menu.addItem(withTitle: "Setup Guide…", action: #selector(onboarding), keyEquivalent: "")
-        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit uiui", action: #selector(quit), keyEquivalent: "q")
-        for menuItem in menu.items { menuItem.target = self }
-        item.menu = menu; statusItem = item
+    private func installStatusMenu() {
+        statusMenu = StatusMenuController(model: model, actions: .init(
+            openWindow: { [weak self] in self?.model.openHome() },
+            openSettings: { [weak self] in self?.model.openSettings() },
+            openSetupGuide: { [weak self] in self?.model.openOnboarding() },
+            checkForUpdates: { [weak self] in self?.updater.checkNow() },
+            quit: { NSApplication.shared.terminate(nil) }))
     }
     private func configureVoiceTrigger() {
         // The recorder in Settings or setup owns key presses while it listens.
