@@ -16,9 +16,12 @@ protocol TriggeredVoiceCapture: AnyObject {
     func start(locale: String, contextualStrings: [String]) async throws
     func stop()
     func cancel()
+    /// Drops audio at the tap without ending the capture. Optional for test doubles.
+    @discardableResult func setPaused(_ paused: Bool) -> Bool
 }
 
 extension TriggeredVoiceCapture {
+    @discardableResult func setPaused(_ paused: Bool) -> Bool { false }
     var engineDescription: String { "On-device speech" }
     var engineWarning: String? { nil }
 }
@@ -35,6 +38,8 @@ final class TriggeredVoice: NSObject {
     private(set) var state = "off"
     private(set) var partialCommand = ""
     private(set) var audioLevel: Float = 0
+    /// Recording is held inside the same capture; no audio reaches the recogniser.
+    private(set) var isPaused = false
     private(set) var lastError: String?
     var engineDescription: String { capture.engineDescription }
     var engineWarning: String? { capture.engineWarning }
@@ -48,6 +53,8 @@ final class TriggeredVoice: NSObject {
     /// Emitted after all related state properties agree, for native panel coordination.
     var onStateChanged: (() -> Void)?
     var onRecordingSound: ((RecordingSound) -> Void)?
+    /// Raw, unclamped RMS from each ~10 Hz level measurement of the current capture.
+    var onLevelSample: ((Float) -> Void)?
 
     var stateLabel: String {
         switch state {
@@ -127,8 +134,9 @@ final class TriggeredVoice: NSObject {
         // Recognition failures never turn a partial into an executable command.
         capture.onRecovery = nil
         capture.onAudioLevel = { [weak self] level in
-            guard let self, self.isCurrentCapture(token), self.isRecording, level.isFinite else { return }
+            guard let self, self.isCurrentCapture(token), self.isRecording, !self.isPaused, level.isFinite else { return }
             self.audioLevel = min(max(level, 0), 1)
+            self.onLevelSample?(level)
         }
         // Measure finalization here before onCommand, avoiding a stale callback when
         // onCommand synchronously starts another capture.
@@ -176,6 +184,7 @@ final class TriggeredVoice: NSObject {
         finishing = true
         finishWasUserInitiated = userInitiated
         isRecording = false
+        isPaused = false
         audioLevel = 0
         finishRequestedAt = DispatchTime.now().uptimeNanoseconds
         state = "finishing"
@@ -191,6 +200,7 @@ final class TriggeredVoice: NSObject {
         cancelResources()
         isEnabled = false
         isRecording = false
+        isPaused = false
         working = false
         partialCommand = ""
         // A stopped session no longer owns an actionable capture error. Keeping
@@ -199,6 +209,20 @@ final class TriggeredVoice: NSObject {
         state = "off"
         if cancelledCapture { onRecordingSound?(.cancelled) }
         onStateChanged?()
+    }
+
+    /// Pause or resume the active capture. Ignored unless audio is actually being
+    /// captured, so a pause can never start a microphone or outlive the capture.
+    @discardableResult
+    func setPaused(_ paused: Bool) -> Bool {
+        guard paused != isPaused else { return isPaused == paused && isRecording }
+        guard let token = activeCapture, isCurrentCapture(token), isRecording, !starting, !finishing,
+              state == "capturing" else { return false }
+        guard capture.setPaused(paused) else { return false }
+        isPaused = paused
+        audioLevel = 0
+        onStateChanged?()
+        return true
     }
 
     func setWorking(_ value: Bool) {
@@ -231,6 +255,7 @@ final class TriggeredVoice: NSObject {
         finishing = false
         finishWasUserInitiated = false
         isRecording = false
+        isPaused = false
         audioLevel = 0
         let elapsed = finishRequestedAt.map { Double(DispatchTime.now().uptimeNanoseconds - $0) / 1_000_000 }
         finishRequestedAt = nil
@@ -256,6 +281,7 @@ final class TriggeredVoice: NSObject {
         let interruptedCapture = isRecording || finishing
         cancelResources()
         isRecording = false
+        isPaused = false
         lastError = message
         state = "error"
         if interruptedCapture { onRecordingSound?(.cancelled) }
@@ -268,6 +294,7 @@ final class TriggeredVoice: NSObject {
 
     private func cancelResources() {
         audioLevel = 0
+        isPaused = false
         activeCapture = nil
         starting = false
         finishing = false

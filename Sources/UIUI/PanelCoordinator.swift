@@ -7,95 +7,6 @@ final class CompanionPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-enum NotchLayout {
-    static func expandedWidth(cameraWidth: CGFloat, hasCamera: Bool, size: NotchSize = .standard) -> CGFloat {
-        max(size.minimumExpandedWidth, hasCamera ? cameraWidth + size.expandedWings : size.minimumExpandedWidth)
-    }
-    static let revealDuration = 0.16
-    static func expandedHeight(cameraHeight: CGFloat, size: NotchSize = .standard) -> CGFloat {
-        max(33 + size.bodyHeight, cameraHeight + size.bodyHeight)
-    }
-    static func closedSize(cameraWidth: CGFloat, cameraHeight: CGFloat, hasCamera: Bool, size: NotchSize = .standard) -> CGSize {
-        CGSize(width: hasCamera ? cameraWidth + size.closedWings : size.closedWidthWithoutCamera,
-               height: hasCamera ? max(36, cameraHeight + 3) : 38)
-    }
-    static func surfaceSize(phase: NotchFeedbackPhase, cameraWidth: CGFloat, cameraHeight: CGFloat,
-                            hasCamera: Bool, expanded: Bool, size: NotchSize = .standard) -> CGSize {
-        guard expanded else { return closedSize(cameraWidth: cameraWidth, cameraHeight: cameraHeight, hasCamera: hasCamera, size: size) }
-        let header = hasCamera ? max(32, cameraHeight) : 32
-        let fullWidth = expandedWidth(cameraWidth: cameraWidth, hasCamera: hasCamera, size: size)
-        switch phase {
-        case .preparing, .recording, .processing, .queued, .dispatched, .cancelled, .copied, .needsInput:
-            // One compact footprint for the entire voice cycle. A fast cleanup
-            // result cannot shrink, expand, then shrink the body within a blink.
-            return CGSize(width: fullWidth, height: header + size.bodyHeight)
-        default:
-            return CGSize(width: hasCamera ? max(fullWidth - 20, cameraWidth + size.expandedWings - 16) : fullWidth - 40, height: header + 11)
-        }
-    }
-}
-
-/// One persistent hosting view. Only its mask and content opacity animate; the controls
-/// keep their final layout throughout the reveal. Window resizing never animates.
-struct NotchStage: View {
-    let model: AppModel
-    let onExpand: () -> Void
-    let onCollapse: () -> Void
-    var onPointerEnter: () -> Void = {}
-    var onPointerExit: () -> Void = {}
-    var feedbackPreviewIsVisible: Bool? = nil
-    @Environment(\.notchReduceMotion) private var reduceMotion
-    private var revealAnimation: Animation? {
-        reduceMotion ? nil : .timingCurve(0.22, 0.8, 0.25, 1, duration: NotchLayout.revealDuration)
-    }
-    private var phase: NotchFeedbackPhase { model.notchFeedbackPhase }
-    private func surface(expanded: Bool) -> CGSize {
-        NotchLayout.surfaceSize(phase: phase, cameraWidth: model.notchCameraWidth,
-            cameraHeight: model.notchCameraHeight, hasCamera: model.notchHasCamera, expanded: expanded,
-            size: model.settings.notchSize)
-    }
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .top) {
-                // One persistent animation owner: hidden content branches never
-                // run a second timeline or restart a receipt on hover/collapse.
-                NotchVisualFeedback(phase: phase, level: model.notchAudioLevel,
-                    hasCamera: model.notchHasCamera, cameraWidth: model.notchCameraWidth,
-                    cameraHeight: model.notchCameraHeight, style: model.settings.notchVisualStyle, feedbackID: model.notchVoiceFeedback?.id,
-                    isVisible: feedbackPreviewIsVisible ?? model.settings.notchEnabled)
-                    .background(Color.black)
-                    .frame(width: surface(expanded: model.notchExpanded).width,
-                           height: surface(expanded: model.notchExpanded).height)
-                    .animation(revealAnimation, value: model.notchExpanded)
-                    .animation(revealAnimation, value: phase)
-                if model.notchMounted {
-                    NotchView(model: model, expanded: true, onExpand: onExpand, onCollapse: onCollapse, rendersMosaic: false,
-                              onPointerEnter: onPointerEnter, onPointerExit: onPointerExit)
-                        .transaction { $0.animation = nil }
-                        .frame(width: surface(expanded: true).width, height: surface(expanded: true).height)
-                        .opacity(model.notchExpanded ? 1 : 0)
-                        .animation(revealAnimation, value: model.notchExpanded)
-                        .allowsHitTesting(model.notchExpanded)
-                }
-                NotchView(model: model, expanded: false, onExpand: onExpand, onCollapse: onCollapse, rendersMosaic: false,
-                          onPointerEnter: onPointerEnter, onPointerExit: onPointerExit)
-                    .transaction { $0.animation = nil }
-                    .frame(width: surface(expanded: false).width, height: surface(expanded: false).height)
-                    .opacity(model.notchExpanded ? 0 : 1)
-                    .animation(revealAnimation, value: model.notchExpanded)
-                    .allowsHitTesting(!model.notchExpanded)
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
-            .mask(alignment: .top) {
-                NotchContour(topRadius: model.notchExpanded ? 14 : 9, bottomRadius: model.notchExpanded ? 24 : 14)
-                    .frame(width: surface(expanded: model.notchExpanded).width, height: surface(expanded: model.notchExpanded).height)
-                    .animation(revealAnimation, value: model.notchExpanded)
-                    .animation(revealAnimation, value: phase)
-            }
-        }
-    }
-}
-
 /// Closed history can release its AppKit/SwiftUI tree without cooling the voice
 /// HUD or models. Editors and sheets retain their local, recoverable drafts.
 @MainActor
@@ -165,6 +76,8 @@ final class PanelCoordinator {
     private var collapseTask: Task<Void, Never>?
     private var hoverCollapseTask: Task<Void, Never>?
     private var transitionID = UUID()
+    private let pauseHotKey = PauseHotKey()
+    private let ownsSystemHooks: Bool
     private var feedbackID: UUID?
     private lazy var feedbackLifetime = NotchFeedbackLifetime { [weak self] id, clearReceipt in
         guard let self, model.activeVoiceFeedback?.id == id,
@@ -176,6 +89,7 @@ final class PanelCoordinator {
 
     init(model: AppModel, installSystemObservers: Bool = true) {
         self.model = model
+        ownsSystemHooks = installSystemObservers
         workspace = WorkspaceWindowLifetime(model: model) {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 580), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.title = "uiui"; window.titlebarAppearsTransparent = true; window.toolbarStyle = .unified
@@ -185,6 +99,7 @@ final class PanelCoordinator {
             return window
         }
         guard installSystemObservers else { return }
+        pauseHotKey.onPress = { [weak model] in model?.toggleVoicePause() }
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.updateNotch() } }
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.model.cancelRecording(); self?.model.cancelTriggeredVoice(); self?.collapse() } }
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
@@ -255,8 +170,8 @@ final class PanelCoordinator {
     }
     func updateNotch() {
         guard model.settings.notchEnabled else { collapseTask?.cancel(); model.notchExpanded = false; model.notchMounted = false; notch?.orderOut(nil); return }
-        guard let screen = preferredScreen else { return }
-        model.notchHasCamera = screen.safeAreaInsets.top > 0
+        guard let (screen, placement) = notchScreen else { return }
+        model.notchHasCamera = placement.shape == .cameraNotch
         if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea { model.notchCameraWidth = max(160, right.minX - left.maxX) }
         else { model.notchCameraWidth = 180 }
         model.notchCameraHeight = model.notchHasCamera ? max(32, screen.safeAreaInsets.top) : 0
@@ -264,7 +179,11 @@ final class PanelCoordinator {
             let panel = makePanel(acceptsKeyboardFocus: false); panel.level = .statusBar; panel.hasShadow = false
             panel.contentView = NSHostingView(rootView: NotchStage(model: model, onExpand: { [weak self] in self?.expand() }, onCollapse: { [weak self] in self?.collapse() },
                                                                 onPointerEnter: { [weak self] in self?.pointerEnteredNotch() },
-                                                                onPointerExit: { [weak self] in self?.pointerLeftNotch() }))
+                                                                onPointerExit: { [weak self] in self?.pointerLeftNotch() },
+                                                                onLayoutChange: { [weak self] in
+                                                                    guard let self, model.notchMounted else { return }
+                                                                    setNotchFrame(expanded: true)
+                                                                }))
             notch = panel
         }
         setNotchFrame(expanded: model.notchExpanded || model.notchMounted)
@@ -328,6 +247,8 @@ final class PanelCoordinator {
             feedbackID = nil
         }
         feedbackLifetime.update(feedback: model.notchVoiceFeedback, busy: keepsVoiceHUDVisible)
+        // Control-Option-P exists only while a capture can be paused.
+        if ownsSystemHooks { pauseHotKey.setEnabled(model.canPauseVoiceCapture) }
         updateNotch()
     }
     /// Shows or ends a notch overlay: the setup guide's style preview or a model download.
@@ -352,6 +273,7 @@ final class PanelCoordinator {
         expand()
     }
     func shutdown() {
+        pauseHotKey.setEnabled(false)
         feedbackLifetime.cancel()
         collapseTask?.cancel()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
@@ -360,15 +282,27 @@ final class PanelCoordinator {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         notch?.close(); capture?.close(); workspace.window?.close()
     }
-    private var preferredScreen: NSScreen? { NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first }
+    /// Notch-bearing display first, otherwise the main display, where the notch
+    /// becomes a floating pill. The geometry decision itself is pure (NotchPlacement).
+    private var notchScreen: (NSScreen, NotchPlacement)? {
+        let screens = NSScreen.screens
+        let main = NSScreen.main
+        let described = screens.map { screen in
+            NotchPlacement.Screen(frame: screen.frame, visibleFrame: screen.visibleFrame,
+                                  safeAreaTop: screen.safeAreaInsets.top, isMain: screen == main)
+        }
+        guard let placement = NotchPlacement.decide(screens: described) else { return nil }
+        return (screens[placement.screenIndex], placement)
+    }
     private func setNotchFrame(expanded: Bool) {
-        guard let screen = preferredScreen else { return }
+        guard let (_, placement) = notchScreen else { return }
         let size = model.settings.notchSize
         let closed = NotchLayout.closedSize(cameraWidth: model.notchCameraWidth, cameraHeight: model.notchCameraHeight, hasCamera: model.notchHasCamera, size: size)
         let width: CGFloat = expanded ? NotchLayout.expandedWidth(cameraWidth: model.notchCameraWidth, hasCamera: model.notchHasCamera, size: size) : closed.width
-        let height: CGFloat = expanded ? NotchLayout.expandedHeight(cameraHeight: model.notchCameraHeight, size: size) : closed.height
-        let top = model.notchHasCamera ? screen.frame.maxY : screen.visibleFrame.maxY - 8
-        let frame = NSRect(x: screen.frame.midX - width / 2, y: top - height, width: width, height: height)
+        let height: CGFloat = expanded
+            ? NotchLayout.expandedHeight(cameraHeight: model.notchCameraHeight, size: size, transcriptOpen: model.notchExtras.transcriptOpen)
+            : closed.height
+        let frame = placement.frame(size: CGSize(width: width, height: height))
         if notch?.frame != frame { notch?.setFrame(frame, display: true) }
     }
     private func makePanel(acceptsKeyboardFocus: Bool = true) -> CompanionPanel {

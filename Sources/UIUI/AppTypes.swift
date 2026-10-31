@@ -16,6 +16,8 @@ struct VoiceActionFeedback: Identifiable, Equatable {
     let title: String
     let detail: String
     var presentation: Presentation = .message
+    /// A paste receipt that keeps Undo and Copy reachable for a few seconds.
+    var offersUndo = false
 
     var symbol: String {
         if presentation == .cancellation { return "xmark.circle" }
@@ -49,22 +51,26 @@ enum CaptureMode: String, CaseIterable, Identifiable {
 }
 
 enum NotchVisualStyle: String, Codable, CaseIterable, Identifiable {
-    case mosaic, liquid, ribbon
+    case mosaic, eyes, bars, words
     var id: String { rawValue }
     var title: String {
         switch self {
         case .mosaic: "Mosaic"
-        case .liquid: "Liquid"
-        case .ribbon: "Ribbon"
+        case .eyes: "Eyes"
+        case .bars: "Voice bars"
+        case .words: "Words first"
         }
     }
     var detail: String {
         switch self {
         case .mosaic: "Fine tiles, flowing together."
-        case .liquid: "Soft pools of moving light."
-        case .ribbon: "A fine ribbon around the edge."
+        case .eyes: "The uiui eyes, listening and blinking."
+        case .bars: "Thin bars that follow your voice."
+        case .words: "Your words are the show."
         }
     }
+    /// Retired and unknown stored values fall back to Mosaic.
+    init(stored raw: String?) { self = raw.flatMap(Self.init(rawValue:)) ?? .mosaic }
 }
 
 /// How much room the notch takes beside the camera. The part over the camera
@@ -125,8 +131,7 @@ struct UIUISettings: Codable {
         notchEnabled = try values.decodeIfPresent(Bool.self, forKey: .notchEnabled) ?? true
         // A future, missing or malformed style must not discard other saved
         // preferences or dictionary entries when falling back to current Mosaic.
-        notchVisualStyle = (try? values.decode(String.self, forKey: .notchVisualStyle))
-            .flatMap(NotchVisualStyle.init(rawValue:)) ?? .mosaic
+        notchVisualStyle = NotchVisualStyle(stored: try? values.decode(String.self, forKey: .notchVisualStyle))
         notchSize = (try? values.decode(String.self, forKey: .notchSize)).flatMap(NotchSize.init(rawValue:)) ?? .standard
         voiceTriggerEnabled = try values.decodeIfPresent(Bool.self, forKey: .voiceTriggerEnabled) ?? true
         // An unknown or malformed trigger falls back to Fn without discarding settings.

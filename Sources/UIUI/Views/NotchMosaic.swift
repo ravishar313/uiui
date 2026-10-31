@@ -141,6 +141,12 @@ struct NotchVisualFeedback: View {
     var feedbackID: UUID? = nil
     var previewProgress: Double? = nil
     var isVisible: Bool = true
+    /// Capture is held: still, dim and free of frame requests.
+    var paused: Bool = false
+    /// Hover controls are shown over the wings.
+    var dimmed: Bool = false
+    /// Words are on screen; the Eyes glance toward them.
+    var textActive: Bool = false
 
     @Environment(\.notchReduceMotion) private var reduceMotion
     @State private var eventStart = Date()
@@ -153,6 +159,10 @@ struct NotchVisualFeedback: View {
     @State private var levelFrom = 0.0
     @State private var levelTo = 0.0
     @State private var levelStart = Date()
+    @State private var history = NotchLevelHistory()
+    @State private var glanceFrom = 0.0
+    @State private var glanceTo = 0.0
+    @State private var glanceStart = Date()
 
     private var event: NotchFeedbackEvent { NotchFeedbackEvent(phase: phase, feedbackID: feedbackID) }
     private struct Transition: Equatable {
@@ -161,7 +171,7 @@ struct NotchVisualFeedback: View {
         let reduceMotion: Bool
     }
     private var ticking: Bool {
-        isVisible && previewProgress == nil && !reduceMotion && (blending || NotchMosaicMetrics.requestsFrames(
+        isVisible && previewProgress == nil && !reduceMotion && !paused && (blending || NotchMosaicMetrics.requestsFrames(
             phase: phase,
             elapsed: settled ? NotchMosaicMetrics.duration(for: phase) : 0,
             reduceMotion: reduceMotion))
@@ -175,13 +185,15 @@ struct NotchVisualFeedback: View {
                 let progress = previewProgress.map { min(1, max(0, $0)) }
                     ?? (reduceMotion ? 1 : activeEvent != event ? 0 : settled ? 1 : NotchMosaicMetrics.progress(phase: phase, elapsed: elapsed))
                 let time = reduceMotion ? 0 : previewProgress.map { $0 * 1.4 } ?? fieldTime(at: timeline.date)
-                let audio = reduceMotion ? safeLevel : interpolatedLevel(at: timeline.date)
+                let audio = paused ? 0 : (reduceMotion || previewProgress != nil) ? safeLevel : interpolatedLevel(at: timeline.date)
+                let bars = barLevels(at: timeline.date, audio: audio)
+                let glance = glanceValue(at: timeline.date)
                 let layers = previewProgress != nil || reduceMotion || blend.isEmpty
                     ? [NotchPhaseBlend.Layer(drawing: .init(phase: phase, style: style,
                         progress: progress, audio: audio, time: time), weight: 1)]
                     : blend.layers(at: timeline.date.timeIntervalSinceReferenceDate, audio: audio, fieldTime: time)
                 Canvas(opaque: false, rendersAsynchronously: false) { context, size in
-                    draw(context: &context, size: size, layers: layers, progress: progress)
+                    draw(context: &context, size: size, layers: layers, progress: progress, bars: bars, glance: glance)
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
             }
@@ -227,18 +239,47 @@ struct NotchVisualFeedback: View {
                 settled = true
             } catch { return }
         }
-        .onAppear { levelTo = safeLevel; levelFrom = safeLevel }
+        .onAppear { levelTo = safeLevel; levelFrom = safeLevel; glanceTo = textActive ? 1 : 0; glanceFrom = glanceTo }
         .onChange(of: safeLevel) { _, newLevel in
             let now = Date()
             levelFrom = interpolatedLevel(at: now)
             levelTo = newLevel
             levelStart = now
+            if style == .bars { history.append(newLevel, at: now.timeIntervalSinceReferenceDate) }
+        }
+        .onChange(of: textActive) { _, active in
+            let now = Date()
+            glanceFrom = glanceValue(at: now)
+            glanceTo = active ? 1 : 0
+            glanceStart = now
+        }
+        .onChange(of: phase) { _, newPhase in
+            if newPhase != .recording { history.clear() }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
     private var safeLevel: Double { level.isFinite ? min(1, max(0, level)) : 0 }
+
+    private func glanceValue(at date: Date) -> Double {
+        if reduceMotion { return glanceTo }
+        let fraction = NotchMosaicMetrics.smooth(max(0, date.timeIntervalSince(glanceStart)) / 0.3)
+        return glanceFrom + (glanceTo - glanceFrom) * fraction
+    }
+
+    /// Real, smoothed level per bar; each bar reads slightly older audio than the
+    /// one nearer the camera. Without samples (previews, Reduced Motion) a fixed
+    /// profile of the single level is used.
+    private func barLevels(at date: Date, audio: Double) -> [Double] {
+        let count = NotchNativeDrawing.barCount
+        guard style == .bars else { return [] }
+        if reduceMotion || previewProgress != nil || history.samples.isEmpty {
+            return (0..<count).map { audio * NotchNativeDrawing.barProfile[$0] }
+        }
+        let now = date.timeIntervalSinceReferenceDate
+        return (0..<count).map { history.value(at: now, delay: Double($0) * 0.045) }
+    }
 
     private func fieldTime(at date: Date) -> TimeInterval {
         if let fieldStoppedAt { return fieldStoppedAt }
@@ -255,7 +296,7 @@ struct NotchVisualFeedback: View {
     }
 
     private func draw(context: inout GraphicsContext, size: CGSize,
-                      layers: [NotchPhaseBlend.Layer], progress: Double) {
+                      layers: [NotchPhaseBlend.Layer], progress: Double, bars: [Double], glance: Double) {
         let geometry = NotchMosaicGeometry(size: size, hasCamera: hasCamera,
                                            cameraWidth: cameraWidth, cameraHeight: cameraHeight)
         guard !geometry.bounds.isEmpty else { return }
@@ -263,7 +304,7 @@ struct NotchVisualFeedback: View {
         for layer in layers where layer.weight > 0.0001 && envelope > 0 {
             var light = context
             light.opacity *= layer.weight
-            drawLayer(context: &light, geometry: geometry, drawing: layer.drawing, envelope: envelope)
+            drawLayer(context: &light, geometry: geometry, drawing: layer.drawing, envelope: envelope, bars: bars, glance: glance)
         }
         // Last, opaque and independent of animation: no field, transform, or
         // expanded-panel light can ever draw over the physical camera cutout.
@@ -271,7 +312,7 @@ struct NotchVisualFeedback: View {
     }
 
     private func drawLayer(context: inout GraphicsContext, geometry: NotchMosaicGeometry,
-                           drawing: NotchPhaseBlend.Drawing, envelope: Double) {
+                           drawing: NotchPhaseBlend.Drawing, envelope: Double, bars: [Double], glance: Double) {
         let phase = drawing.phase
         let style = drawing.style
         let progress = drawing.progress
@@ -317,9 +358,10 @@ struct NotchVisualFeedback: View {
                 context.fill(paths[index], with: .color(tint.opacity(Double(index + 1) / Double(paths.count))))
             }
         } else if intensity > 0.0001 {
-            NotchContinuousDrawing.draw(in: &context, geometry: geometry, style: style,
-                phase: phase, time: time, progress: progress, audio: audio,
-                reduceMotion: reduceMotion, tint: tint, intensity: intensity)
+            NotchNativeDrawing.draw(in: &context, geometry: geometry, style: style,
+                input: .init(phase: phase, time: reduceMotion ? 0 : time, progress: progress, audio: audio,
+                             bars: bars, reduceMotion: reduceMotion, tint: tint, paused: paused,
+                             dimmed: dimmed, glance: glance, intensity: intensity))
         }
     }
 

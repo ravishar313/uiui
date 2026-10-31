@@ -175,6 +175,17 @@ final class SpeechCapture {
         }
     }
 
+    /// Pause/resume inside one capture. Audio is dropped at the tap while paused; the
+    /// accumulated transcript, lease and recovery identity are untouched, so finish
+    /// and cancel behave exactly as in an unpaused session. Returns whether it applied.
+    @discardableResult
+    func setPaused(_ paused: Bool) -> Bool {
+        guard isRecording, !isFinishing, let lease else { return false }
+        lease.setPaused(paused)
+        stateDescription = paused ? "Paused" : "Listening on device · \(engineDescription)"
+        return true
+    }
+
     func cancel() {
         let cancelledCapture = hasActiveSession
         generation &+= 1
@@ -347,6 +358,12 @@ final class SpeechAudioLease: @unchecked Sendable {
     private var acceptsAudio = true
     private var incompleteAudio = false
     var mayStart: Bool { lock.lock(); defer { lock.unlock() }; return valid && acceptsAudio }
+    private var paused = false
+    /// Pause keeps the session and its transcript but drops every buffer at the tap,
+    /// so no audio reaches the recogniser. Taps use this instead of mayStart.
+    var acceptsTapAudio: Bool { lock.lock(); defer { lock.unlock() }; return valid && acceptsAudio && !paused }
+    var isPaused: Bool { lock.lock(); defer { lock.unlock() }; return paused }
+    func setPaused(_ value: Bool) { lock.lock(); paused = value; lock.unlock() }
     var isValid: Bool { lock.lock(); defer { lock.unlock() }; return valid }
     var hasIncompleteAudio: Bool { lock.lock(); defer { lock.unlock() }; return incompleteAudio }
     func markIncomplete() { lock.lock(); incompleteAudio = true; acceptsAudio = false; lock.unlock() }
@@ -512,7 +529,7 @@ final class LegacySpeechAudioSession: SpeechAudioSession, @unchecked Sendable {
         let configuration = configuration
         let meter = CaptureLevelMeter()
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            guard lease.mayStart else { return }
+            guard lease.acceptsTapAudio else { return }
             request.append(buffer)
             if configuration.reportLevels, let level = meter.measureIfDue(buffer) { configuration.onLevel(level) }
         }

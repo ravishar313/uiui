@@ -16,6 +16,9 @@ extension EnvironmentValues {
 enum NotchFeedbackTiming {
     static let pasteAnimationSeconds = 0.46
     static let pasteDwell: Duration = .milliseconds(650)
+    /// A paste receipt that offers Undo and Copy. The illumination still ends at
+    /// `pasteAnimationSeconds`; only the quiet sent state stays reachable.
+    static let undoDwell: Duration = .seconds(3)
     static let cancellationDwell: Duration = .milliseconds(280)
     static let informationDwell: Duration = .milliseconds(1_400)
     static let successDwell: Duration = .seconds(2)
@@ -72,7 +75,7 @@ final class NotchFeedbackLifetime {
                 hideOnExpiry = false
             case .information, .success:
                 switch feedback.presentation {
-                case .pasteDispatch: dwell = NotchFeedbackTiming.pasteDwell
+                case .pasteDispatch: dwell = feedback.offersUndo ? NotchFeedbackTiming.undoDwell : NotchFeedbackTiming.pasteDwell
                 case .cancellation: dwell = NotchFeedbackTiming.cancellationDwell
                 case .message:
                     dwell = feedback.state == .success ? NotchFeedbackTiming.successDwell : NotchFeedbackTiming.informationDwell

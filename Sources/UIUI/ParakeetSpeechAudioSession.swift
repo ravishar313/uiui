@@ -266,7 +266,7 @@ final class ParakeetSpeechAudioSession: SpeechAudioSession, @unchecked Sendable 
         pipeline.start()
         let meter = CaptureLevelMeter()
         input.installTap(onBus: 0, bufferSize: 1024, format: sourceFormat) { buffer, _ in
-            guard lease.mayStart else { return }
+            guard lease.acceptsTapAudio else { return }
             pump.append(buffer)
             if configuration.reportLevels, let level = meter.measureIfDue(buffer) { configuration.onLevel(level) }
         }

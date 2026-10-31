@@ -62,9 +62,15 @@ private struct NotchStyleThumbnail: View {
             previewProgress: 0.65, isVisible: false)
             .background(Color.black)
             .frame(width: 368, height: 65)
+            .overlay(alignment: .bottom) {
+                if style == .words {
+                    Text(NotchWordsText.attributed("once the review is complete"))
+                        .font(.system(size: 15)).padding(.bottom, 9)
+                }
+            }
             .clipShape(NotchContour(topRadius: 14, bottomRadius: 24))
-            .scaleEffect(0.34)
-            .frame(width: 126, height: 25)
+            .scaleEffect(0.27)
+            .frame(width: 100, height: 20)
             .accessibilityHidden(true)
     }
 }
