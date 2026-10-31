@@ -47,6 +47,7 @@ final class AppModel {
     @ObservationIgnored var composerRecoveryDraftID: UUID?
     @ObservationIgnored var explicitlyOpenedRecoveryDraftID: UUID?
     let speech = SpeechCapture()
+    let notchExtras = NotchCaptureExtras()
     let voice: TriggeredVoice
     var voiceTriggerStatus = "Shortcut ready · microphone off"
     var voiceInputKind: VoiceGestureCaptureKind = .dictation
@@ -272,9 +273,10 @@ final class AppModel {
             }
         }
         voice.onPartial = { [weak self] text in self?.receiveVoicePartial(text) }
+        voice.onLevelSample = { [weak self] level in self?.notchExtras.levelSample(level) }
         voice.onStateChanged = { [weak self] in
             guard let self else { return }
-            if !voice.isRecording { voiceCaptureRequested = false }
+            if !voice.isRecording { voiceCaptureRequested = false; notchExtras.endCapture() }
             if voice.state == "error" {
                 preserveTriggeredRecordingRecovery()
                 cleanup.cancel()

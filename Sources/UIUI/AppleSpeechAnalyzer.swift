@@ -270,7 +270,7 @@ final class AppleSpeechAnalyzerSession: SpeechAudioSession, @unchecked Sendable 
         })
         self.pump = pump
         input.installTap(onBus: 0, bufferSize: 1024, format: sourceFormat) { buffer, _ in
-            guard lease.mayStart else { return }
+            guard lease.acceptsTapAudio else { return }
             // Conversion/copy occurs synchronously while tap storage is valid.
             pump.append(buffer)
             if configuration.reportLevels, let level = meter.measureIfDue(buffer) { configuration.onLevel(level) }

@@ -48,11 +48,11 @@ final class NotchPhaseBlendTests: XCTestCase {
         var blend = NotchPhaseBlend()
         blend.transition(phase: .dispatched, style: .mosaic, eventStartedAt: 10,
                          at: 10, audio: 0, fieldTime: 50, immediate: true)
-        blend.transition(phase: .dispatched, style: .liquid, eventStartedAt: 10,
+        blend.transition(phase: .dispatched, style: .eyes, eventStartedAt: 10,
                          at: 10.2, audio: 0, fieldTime: 50.2, immediate: false)
         let layers = blend.layers(at: 10.33, audio: 0, fieldTime: 50.33)
         XCTAssertEqual(layers.count, 1)
-        XCTAssertEqual(layers.first?.drawing.style, .liquid)
+        XCTAssertEqual(layers.first?.drawing.style, .eyes)
         XCTAssertEqual(layers.first?.drawing.progress ?? 0, 0.33 / 0.46, accuracy: 0.00001)
         XCTAssertEqual(layers.first?.drawing.time ?? 0, 50.33, accuracy: 0.00001)
     }
@@ -72,7 +72,7 @@ final class NotchPhaseBlendTests: XCTestCase {
         let phases: [NotchFeedbackPhase] = [.recording, .processing, .dispatched, .preparing, .recording, .processing]
         for (index, phase) in phases.enumerated() {
             let time = Double(index) * 0.02
-            blend.transition(phase: phase, style: index.isMultiple(of: 2) ? .mosaic : .ribbon,
+            blend.transition(phase: phase, style: index.isMultiple(of: 2) ? .mosaic : .bars,
                              eventStartedAt: time, at: time, audio: 0.6,
                              fieldTime: 20 + time, immediate: false)
             let layers = blend.layers(at: time + 0.01, audio: 0.6, fieldTime: 20 + time + 0.01)
@@ -83,9 +83,9 @@ final class NotchPhaseBlendTests: XCTestCase {
 
     func testReducedMotionImmediateTransitionRetainsNoPriorFieldsOrBlendClock() {
         var blend = NotchPhaseBlend()
-        blend.transition(phase: .recording, style: .liquid, eventStartedAt: 0,
+        blend.transition(phase: .recording, style: .eyes, eventStartedAt: 0,
                          at: 0, audio: 0.8, fieldTime: 1, immediate: false)
-        blend.transition(phase: .cancelled, style: .liquid, eventStartedAt: 1,
+        blend.transition(phase: .cancelled, style: .eyes, eventStartedAt: 1,
                          at: 1, audio: 0, fieldTime: 0, immediate: true)
         XCTAssertFalse(blend.isBlending(at: 1))
         let layers = blend.layers(at: 1.26, audio: 0, fieldTime: 0)

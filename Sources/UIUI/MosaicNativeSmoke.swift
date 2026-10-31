@@ -61,7 +61,7 @@ enum MosaicNativeSmoke {
         let camera = measuredCamera()
         model.notchCameraWidth = camera.width
         model.notchCameraHeight = camera.height
-        let styles: [NotchVisualStyle] = [.mosaic, .liquid, .ribbon]
+        let styles = NotchVisualStyle.allCases
         var results: [String: [String: Any]] = [:]
         var activeImages: [(NotchVisualStyle, CGImage)] = []
         var notchImages: [(NotchVisualStyle, CGImage)] = []
@@ -78,7 +78,7 @@ enum MosaicNativeSmoke {
         try FileManager.default.createDirectory(at: switchDirectory, withIntermediateDirectories: false)
         model.settings.notchVisualStyle = .mosaic
         let styleSwitch = try await mountedAnimation(model: model, output: switchDirectory,
-                                                     camera: camera, switchTo: .liquid)
+                                                     camera: camera, switchTo: .eyes)
         let differences = try compareStyles(activeImages)
         let notchDifferences = try compareStyles(notchImages)
         let comparisonSize = surface(model: model, phase: .recording, expanded: true)
@@ -207,8 +207,9 @@ enum MosaicNativeSmoke {
         }
 
         let mounted = try await mountedAnimation(model: model, output: output, camera: camera)
+        let extrasCount = try renderExtras(style: style, model: model, output: output, camera: camera)
         let result: [String: Any] = [
-            "passed": true, "style": style.rawValue, "static_frames": tiles.count,
+            "passed": true, "style": style.rawValue, "static_frames": tiles.count, "extra_state_frames": extrasCount,
             "camera_frames_checked": checkedCameraFrames,
             "camera_maximum_rgb_255": cameraMaximum,
             "terminal_field_maximum_rgb_255": terminalMaximum,
@@ -251,7 +252,9 @@ enum MosaicNativeSmoke {
                 let count = left.1.width * left.1.height
                 let fraction = Double(changed) / Double(count)
                 let mean = Double(totalDelta) / Double(count * 3)
-                guard changed >= max(32, count / 100), mean >= 0.3 else {
+                // Eyes, bars and the Words line are small marks: require a real, measurable
+                // difference rather than a fixed share of the whole panel.
+                guard changed >= 32, mean >= 0.02 else {
                     throw Failure.failed("Active fields are insufficiently distinct: \(left.0.rawValue), \(right.0.rawValue).")
                 }
                 results.append(["first": left.0.rawValue, "second": right.0.rawValue,
@@ -285,6 +288,59 @@ enum MosaicNativeSmoke {
     private static func surface(model: AppModel, phase: NotchFeedbackPhase, expanded: Bool) -> CGSize {
         NotchLayout.surfaceSize(phase: phase, cameraWidth: model.notchCameraWidth,
             cameraHeight: model.notchCameraHeight, hasCamera: model.notchHasCamera, expanded: expanded)
+    }
+
+    /// The extra states: pause, quiet-mic hint, input name, timer, hover transcript,
+    /// Undo/Copy and the amber copy notice, on a camera notch and on a floating pill.
+    private static func renderExtras(style: NotchVisualStyle, model: AppModel, output: URL, camera: Camera) throws -> Int {
+        let directory = output.appendingPathComponent("extras", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let longText = "Can we ship this after lunch, once the review is complete? I also want the release notes to mention the new hover transcript, the pause control, and that Undo only works while the same app is in front. Let me know what you think before three."
+        struct Case { let name: String; let phase: NotchFeedbackPhase; let state: NotchPreviewState; let text: String
+                      let camera: Bool; let progress: Double }
+        let cases: [Case] = [
+            .init(name: "paused", phase: .recording, state: .init(paused: true), text: transcript, camera: true, progress: 0.7),
+            .init(name: "paused-empty", phase: .recording, state: .init(paused: true), text: "", camera: true, progress: 0.7),
+            .init(name: "cannot-hear", phase: .recording, state: .init(cannotHear: true), text: "", camera: true, progress: 0.7),
+            .init(name: "cannot-hear-after-speech", phase: .recording, state: .init(cannotHear: true), text: transcript, camera: true, progress: 0.7),
+            .init(name: "mic-hint", phase: .recording, state: .init(micHint: "Mic: AirPods Pro"), text: "", camera: true, progress: 0.7),
+            .init(name: "timer", phase: .recording, state: .init(timer: "0:42"), text: transcript, camera: true, progress: 0.7),
+            .init(name: "hover-controls", phase: .recording, state: .init(hovering: true), text: transcript, camera: true, progress: 0.7),
+            .init(name: "hover-transcript", phase: .recording, state: .init(timer: "1:12", transcriptOpen: true, hovering: true), text: longText, camera: true, progress: 0.7),
+            .init(name: "sent-undo", phase: .dispatched, state: .init(undo: true, sentApp: "Slack"), text: transcript, camera: true, progress: 1),
+            .init(name: "copied-app", phase: .copied, state: .init(copiedApp: "Safari"), text: transcript, camera: true, progress: 1),
+            .init(name: "pill-recording", phase: .recording, state: .init(), text: transcript, camera: false, progress: 0.7),
+            .init(name: "pill-hover-transcript", phase: .recording, state: .init(transcriptOpen: true, hovering: true), text: longText, camera: false, progress: 0.7),
+            .init(name: "pill-sent-undo", phase: .dispatched, state: .init(undo: true, sentApp: "Notes"), text: transcript, camera: false, progress: 1),
+            .init(name: "pill-collapsed-listening", phase: .recording, state: .init(), text: transcript, camera: false, progress: 0.7)
+        ]
+        var tiles: [Tile] = []
+        for item in cases {
+            model.notchHasCamera = item.camera
+            let collapsed = item.name.hasSuffix("collapsed-listening")
+            let size = NotchLayout.surfaceSize(phase: item.phase, cameraWidth: model.notchCameraWidth,
+                cameraHeight: model.notchCameraHeight, hasCamera: item.camera, expanded: !collapsed,
+                transcriptOpen: item.state.transcriptOpen)
+            var view = NotchView(model: model, expanded: !collapsed, onExpand: {}, onCollapse: {})
+            view.feedbackPreviewPhase = item.phase
+            view.feedbackPreviewProgress = item.progress
+            view.feedbackPreviewLevel = 0.65
+            view.feedbackPreviewTranscript = item.text
+            view.preview = item.state
+            let image = try render(view.environment(\.notchMotionPreviewOverride, false), size: size)
+            try savePNG(image, to: directory.appendingPathComponent(item.name + ".png"))
+            tiles.append(Tile(label: item.name, image: image, size: size))
+            if item.camera {
+                let maximum = try cameraBrightness(image, size: size, camera: camera)
+                guard maximum <= Int(blackThreshold) else {
+                    throw Failure.failed("Camera region illuminated in \(style.rawValue)/extras/\(item.name): \(maximum).")
+                }
+            }
+        }
+        model.notchHasCamera = true
+        try savePNG(try contactSheet(tiles, columns: 2, cell: CGSize(width: 400, height: 200)),
+                    to: output.appendingPathComponent("extras-contact-sheet.png"))
+        return tiles.count
     }
 
     private static func fixtureView(model: AppModel, phase: NotchFeedbackPhase, expanded: Bool,
@@ -324,8 +380,8 @@ enum MosaicNativeSmoke {
         guard CGImageDestinationFinalize(destination) else { throw Failure.failed("Cannot write GIF.") }
     }
 
-    private static func contactSheet(_ tiles: [Tile], columns: Int) throws -> CGImage {
-        let cell = CGSize(width: 400, height: 102)
+    private static func contactSheet(_ tiles: [Tile], columns: Int,
+                                     cell: CGSize = CGSize(width: 400, height: 102)) throws -> CGImage {
         let rows = (tiles.count + columns - 1) / columns
         guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: columns * Int(cell.width),
             pixelsHigh: rows * Int(cell.height), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
@@ -452,9 +508,17 @@ enum MosaicNativeSmoke {
             receiptIdentityPreserved = receiptIdentityPreserved && model.dictationFeedback?.id == receiptID
             if expired, expiryMS == nil { expiryMS = elapsed }
             let maximum = try cameraBrightness(image, size: size, camera: camera)
-            let bandMaximum = try brightness(image,
-                rect: CGRect(x: size.width * 0.25, y: size.height - 7,
-                             width: size.width * 0.5, height: 5), pointSize: size)
+            // Mosaic and Words first draw along the lower edge; Eyes and Voice bars
+            // draw in the wings beside the camera (the logo returns there at idle,
+            // so only the lower-edge styles are checked for withdrawing).
+            let bandRect: CGRect
+            switch originalStyle {
+            case .eyes, .bars:
+                bandRect = CGRect(x: (size.width - camera.width) / 2 - 46, y: 6, width: 40, height: max(8, camera.height - 12))
+            default:
+                bandRect = CGRect(x: size.width * 0.25, y: size.height - 7, width: size.width * 0.5, height: 5)
+            }
+            let bandMaximum = try brightness(image, rect: bandRect, pointSize: size)
             fieldBandMaximum = max(fieldBandMaximum, bandMaximum)
             cameraMaximum = max(cameraMaximum, maximum)
             samples.append(["frame": index, "elapsed_ms": elapsed, "receipt_visible": !expired,
@@ -474,8 +538,9 @@ enum MosaicNativeSmoke {
         guard differentFrames >= 3 else {
             throw Failure.failed("Offscreen host did not display changing animation frames; mounted timing is unproven.")
         }
+        let withdraws = originalStyle == .mosaic || originalStyle == .words
         guard fieldBandMaximum > Int(blackThreshold),
-              samples.suffix(4).allSatisfy({ ($0["field_band_maximum_rgb_255"] as? Int ?? 255) <= Int(blackThreshold) }) else {
+              !withdraws || samples.suffix(4).allSatisfy({ ($0["field_band_maximum_rgb_255"] as? Int ?? 255) <= Int(blackThreshold) }) else {
             throw Failure.failed("Mounted light field did not visibly animate then withdraw; offscreen motion is unproven.")
         }
         // A 30 Hz display sample can trail the deadline; allow 70 ms of bounded

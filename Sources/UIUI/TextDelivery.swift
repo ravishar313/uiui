@@ -19,6 +19,12 @@ enum DeliveryResult {
 protocol TextDelivering: AnyObject {
     func deliver(_ text: String, to target: DeliveryTarget?) async -> DeliveryResult
     func cancel()
+    /// One Command-Z to the app that received the last paste. False when it cannot be sent safely.
+    func undoPaste(to target: DeliveryTarget) -> Bool
+}
+
+extension TextDelivering {
+    func undoPaste(to target: DeliveryTarget) -> Bool { false }
 }
 
 /// Owns a single normal paste after dictation stops. Accessibility is read-only:
@@ -230,6 +236,23 @@ final class TextDelivery: TextDelivering {
     /// Invalidates pending dispatches; a previously sent paste retains its consumption lease.
     func cancel() { generation &+= 1 }
 
+    /// Posts exactly one Command-Z through the same layout-aware, hardware-stream
+    /// path as paste, and only while the destination app is still frontmost.
+    /// It never sends Return or any other key.
+    func undoPaste(to target: DeliveryTarget) -> Bool {
+        guard AXIsProcessTrusted(), CGPreflightPostEventAccess(),
+              Self.matchesForegroundApp(target), Self.physicalModifiersAreReleased,
+              Self.secureInputBlockReason(for: target) == nil else { return false }
+        let zKey = Self.commandKeyCode(for: "z", ansiFallback: 6)
+        guard let source = CGEventSource(stateID: .privateState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: zKey, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: zKey, keyDown: false) else { return false }
+        down.flags = .maskCommand
+        up.flags = []
+        down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
+        return true
+    }
+
     @discardableResult
     static func copy(_ text: String) -> Bool {
         ClipboardWriteTransaction.write(text, using: .native(NSPasteboard.general))
@@ -263,8 +286,10 @@ final class TextDelivery: TextDelivering {
 
     /// The key that types "v" with Command held in the current layout, so Dvorak,
     /// AZERTY and "Dvorak – QWERTY ⌘" layouts receive a real Command-V.
-    static func pasteKeyCode() -> CGKeyCode {
-        let ansiV: CGKeyCode = 9
+    static func pasteKeyCode() -> CGKeyCode { commandKeyCode(for: "v", ansiFallback: 9) }
+
+    /// The key that types `letter` with Command held in the current layout.
+    static func commandKeyCode(for letter: String, ansiFallback ansiV: CGKeyCode) -> CGKeyCode {
         let sources = [TISCopyCurrentKeyboardLayoutInputSource(), TISCopyCurrentASCIICapableKeyboardLayoutInputSource()]
         for case let source? in sources.map({ $0?.takeRetainedValue() }) {
             guard let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { continue }
@@ -279,8 +304,8 @@ final class TextDelivery: TextDelivering {
                                                 &deadKeys, characters.count, &length, &characters)
                     return status == noErr && length > 0 ? String(utf16CodeUnits: characters, count: length).lowercased() : nil
                 }
-                if types(ansiV) == "v" { return ansiV }
-                return (0..<128).map(CGKeyCode.init).first { types($0) == "v" }
+                if types(ansiV) == letter { return ansiV }
+                return (0..<128).map(CGKeyCode.init).first { types($0) == letter }
             }
             if let found { return found }
         }

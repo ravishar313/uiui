@@ -77,6 +77,7 @@ extension AppModel {
         manualVoiceIssue = nil
         dictationDeliveryIssue = nil
         dictationFeedback = nil
+        notchExtras.clearUndo()
         dictationCaptureGeneration = UUID()
         voiceRecoveryCaptureID = dictationCaptureGeneration
         recordingRecovery.begin(id: dictationCaptureGeneration, project: captureProject, kind: .dictation)
@@ -98,6 +99,7 @@ extension AppModel {
             guard let self, voiceCaptureRequested, !Task.isCancelled else { return }
             do {
                 try await voice.start(locale: settings.speechLocale, contextualStrings: contextualVocabulary)
+                notchExtras.captureStarted()
                 if let startedAt = voiceRequestedAt { recordVoiceTiming("voice_startup", since: startedAt) }
                 statusMessage = settings.voiceTriggerMode == .toggle ? "Listening. Tap \(settings.voiceTriggerKey.title) again to finish." : "Listening. Release \(settings.voiceTriggerKey.title) to finish."
             } catch is CancellationError {} catch {
@@ -176,6 +178,7 @@ extension AppModel {
         dictationStreamingStatus = "Cancelled · microphone off"
     }
     func receiveVoicePartial(_ text: String) {
+        notchExtras.transcriptChanged(hasText: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         checkpointTriggeredRecordingRecovery(text)
         if voiceInputKind == .dictation, LocalSpeechModel.supports(locale: settings.speechLocale) {
             cleanup.update(dictationWords(text), captureID: dictationCaptureGeneration,
@@ -278,8 +281,12 @@ extension AppModel {
                 dictationDeliveryIssue = nil
                 dictationStreamingStatus = "Paste sent · copied"
                 if inputKind == .dictation {
-                    dictationFeedback = VoiceActionFeedback(state: .information, title: "Paste sent · copied",
+                    var receipt = VoiceActionFeedback(state: .information, title: "Paste sent · copied",
                         detail: "Sent to \(destination?.appName ?? "your app"). The complete dictation stays on your clipboard.", presentation: .pasteDispatch)
+                    // Undo and Copy stay reachable briefly; Undo needs a known destination.
+                    receipt.offersUndo = true
+                    notchExtras.offerUndo(captureID: captureID, target: destination)
+                    dictationFeedback = receipt
                 }
                 let sentAt = DispatchTime.now().uptimeNanoseconds
                 let elapsed = voiceFinishedAt.flatMap { sentAt >= $0 ? Double(sentAt - $0) / 1_000_000 : nil }
