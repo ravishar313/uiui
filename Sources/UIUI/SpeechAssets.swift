@@ -15,7 +15,7 @@ enum SpeechAssets {
             try await ModelStore.ensureInstalled(progress: progress, fraction: fraction)
             fraction?(nil)
             if #available(macOS 15.0, *) {
-                progress?("Verifying local Phonon speech model…")
+                progress?("Checking the uiui S1 speech model…")
                 try await Task.detached(priority: .userInitiated) { try PhononSpeechModel.verify(at: PhononSpeechModel.directory) }.value
             } else if !ParakeetSpeechModel.isInstalled { try await prepareParakeet(progress: progress, fraction: fraction) }
             try await LocalCleanupModel.prepare(progress: progress)
@@ -30,7 +30,7 @@ enum SpeechAssets {
     private static func prepareParakeet(progress: (@Sendable (String) -> Void)?, fraction: ModelStore.Fraction?) async throws {
         ParakeetSpeechModel.configureLibraryLogging()
         ModelRegistry.revisionOverrides = [ParakeetSpeechModel.repository: parakeetRevision]
-        progress?("Downloading Parakeet Unified · about 610 MB, once…")
+        progress?("Downloading the speech model · about 610 MB, once…")
         let reporter = SpeechSetupProgress(report: progress, fraction: fraction)
         try await ModelHub.download(.parakeetUnified, to: ParakeetSpeechModel.rootDirectory,
                                     variant: ParakeetSpeechModel.downloadVariant,
@@ -38,7 +38,7 @@ enum SpeechAssets {
                                     progressHandler: { reporter.update($0.fractionCompleted) })
         try Task.checkCancellation()
         guard ParakeetSpeechModel.isInstalled else {
-            throw SpeechCaptureFailure.message("The speech model download is incomplete. Choose Prepare Speech to resume.")
+            throw SpeechCaptureFailure.message("The speech model download is incomplete. Choose Download speech model to resume.")
         }
         fraction?(nil)
         progress?("Preparing the Neural Engine…")
@@ -101,6 +101,6 @@ private final class SpeechSetupProgress: @unchecked Sendable {
             return true
         }) else { return }
         fraction?(min(1, max(0, value)))
-        report?("Downloading Parakeet Unified · \(percent)%")
+        report?("Downloading the speech model · \(percent)%")
     }
 }

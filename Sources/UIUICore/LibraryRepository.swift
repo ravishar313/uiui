@@ -190,6 +190,21 @@ public actor LibraryRepository {
         scrubDeletedContent()
     }
 
+    /// Removes every saved dictation, usage record and recovery draft. Settings and
+    /// models are not stored here. secure_delete is on, so freed pages are zeroed;
+    /// the index is merged, the WAL truncated and the file compacted afterwards.
+    public func deleteAllContent() throws {
+        try transaction {
+            try run("DELETE FROM captures_fts")
+            try run("DELETE FROM captures")
+            try run("DELETE FROM usage_events")
+            try run("DELETE FROM recording_drafts")
+        }
+        scrubDeletedContent(mergingIndex: true)
+        try? Self.execute(database, "VACUUM")
+        try? Self.execute(database, "PRAGMA wal_checkpoint(TRUNCATE)")
+    }
+
     private struct RecordingDraftRow {
         var payload: Data?
         var revision: Int64

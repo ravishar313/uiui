@@ -125,7 +125,7 @@ final class PhononNativeModel: @unchecked Sendable {
         do {
             try await model.executor.perform { cancellation in
                 guard PhononSpeechModel.isInstalled else {
-                    throw SpeechCaptureFailure.message("Prepare the Phonon speech model in Settings before recording.")
+                    throw SpeechCaptureFailure.message("Download the speech model in Settings before recording.")
                 }
                 try PhononSpeechModel.verify(at: PhononSpeechModel.directory, checkCancellation: { try cancellation.check() })
                 try cancellation.check()

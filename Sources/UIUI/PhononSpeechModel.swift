@@ -8,7 +8,7 @@ enum PhononSpeechModel {
     static let repository = "uiui/S1"
     static let revision = "full-1029-s16000-f16"
     static let containerSHA256 = "1ebefdb308a1b4f4b3fd8df86b1340cb6934b4c935f4c97386ba7119c07ff249"
-    static let modelDescription = "Phonon 2 · Neural Engine · on device"
+    static let modelDescription = "uiui S1 · Neural Engine · on device"
     static var directory: URL { ModelStore.directory(for: .phonon) }
     static var speechActivityURL: URL { directory.appendingPathComponent("SpeechActivity.mlmodelc", isDirectory: true) }
     static var isInstalled: Bool { isInstalled(at: directory) }

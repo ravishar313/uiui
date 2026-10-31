@@ -11,7 +11,7 @@ enum LocalCleanupModel {
     }
 
     static var speechSummary: String {
-        "\(LocalSpeechModel.name) · Neural Engine + tuned MiniLM · local punctuation and capitalization. Both models are included on macOS 15 and later."
+        "uiui S1 for speech and uiui P1 for punctuation, both on this Mac. Both models are included on macOS 15 and later."
     }
 
     static func prepare(progress: (@Sendable (String) -> Void)?) async throws {

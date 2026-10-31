@@ -23,8 +23,14 @@ struct OnboardingView: View {
 
     @Bindable var model: AppModel
     let onFinish: () -> Void
-    @State private var step: Step = Step(rawValue: UserDefaults.standard.integer(forKey: OnboardingView.stepKey)) ?? .welcome
+    @State private var step: Step
     @State private var askedAccessibility = false
+    @State private var practiceText = ""
+    init(model: AppModel, initialStep: Step? = nil, onFinish: @escaping () -> Void) {
+        self.model = model
+        self.onFinish = onFinish
+        _step = State(initialValue: initialStep ?? Step(rawValue: UserDefaults.standard.integer(forKey: Self.stepKey)) ?? .welcome)
+    }
     private var setup: SystemSetup { SystemSetup.shared }
     private var permissions: SpeechAuthorization { SpeechAuthorization.shared }
     private var needsSpeechRecognition: Bool { !LocalSpeechModel.supports(locale: model.settings.speechLocale) }
@@ -94,7 +100,7 @@ struct OnboardingView: View {
                          detail: setup.isTranslocated || setup.isOnReadOnlyVolume
                             ? "uiui is running from a download or disk image. macOS forgets permissions for copies like this, and updates can’t install."
                             : "uiui works best from the Applications folder, where permissions and updates stick.") {
-                    Button("Move to Applications and Reopen") { setup.moveToApplicationsAndRelaunch() }
+                    Button("Move to Applications and reopen") { setup.moveToApplicationsAndRelaunch() }
                         .buttonStyle(PrimaryButtonStyle(compact: true))
                 }
             } else {
@@ -111,12 +117,12 @@ struct OnboardingView: View {
                      detail: permissions.microphoneStatus == .denied || permissions.microphoneStatus == .restricted
                         ? "macOS remembers a denial. Open System Settings, switch on uiui under Microphone, then come back."
                         : "macOS will ask once.") {
-                permissionButton(permissions.microphoneStatus, pane: .microphone, request: "Allow Microphone")
+                permissionButton(permissions.microphoneStatus, pane: .microphone, request: "Allow microphone")
             }
             if needsSpeechRecognition {
-                StepCard(state: cardState(permissions.speechStatus), title: "Speech Recognition · \(permissions.speechStatus.title)",
+                StepCard(state: cardState(permissions.speechStatus), title: "Speech recognition · \(permissions.speechStatus.title)",
                          detail: "Needed for \(languageName) with Apple’s on-device recognizer.") {
-                    permissionButton(permissions.speechStatus, pane: .speechRecognition, request: "Allow Speech Recognition")
+                    permissionButton(permissions.speechStatus, pane: .speechRecognition, request: "Allow speech recognition")
                 }
             }
         }
@@ -138,7 +144,7 @@ struct OnboardingView: View {
             } else {
                 StepCard(state: askedAccessibility ? .waiting : .todo, title: "Accessibility · Not allowed yet",
                          detail: "Click the button, then switch on uiui in the list System Settings opens. If uiui isn’t listed, click +, choose uiui in Applications, and switch it on.") {
-                    Button("Open Accessibility Settings") { askedAccessibility = true; setup.requestAccessibility() }
+                    Button("Open Accessibility settings") { askedAccessibility = true; setup.requestAccessibility() }
                         .buttonStyle(PrimaryButtonStyle(compact: true))
                 }
                 if askedAccessibility {
@@ -165,7 +171,7 @@ struct OnboardingView: View {
             if model.settings.voiceTriggerKey == .fn, setup.fnKeyAction != .nothing {
                 StepCard(state: .warning, title: "Set the Fn / Globe key to “Do Nothing”",
                          detail: "macOS currently uses it to \(setup.fnKeyAction?.title.lowercased() ?? "show emoji or switch input"). In Keyboard settings, set “Press 🌐 key to” Do Nothing, or pick another shortcut here.") {
-                    Button("Open Keyboard Settings") { setup.open(.keyboard) }.controlSize(.small)
+                    Button("Open keyboard settings") { setup.open(.keyboard) }.controlSize(.small)
                 }
             }
             if !model.settings.voiceTriggerKey.isModifierOnly || setup.accessibilityTrusted {
@@ -203,21 +209,24 @@ struct OnboardingView: View {
 
     private var speech: some View {
         VStack(alignment: .leading, spacing: 14) {
-            header("Prepare speech", "Recognition runs entirely on this Mac.")
+            header("Set up speech", "Recognition runs entirely on this Mac.")
             Picker("Language", selection: $model.settings.speechLocale) {
-                Text("English · India").tag("en-IN")
-                Text("English · US").tag("en-US")
-                Text("English · UK").tag("en-GB")
-                Text("Hindi · India").tag("hi-IN")
-            }.frame(maxWidth: 280)
+                Text(SpeechLanguageOptions.primary.title).tag(SpeechLanguageOptions.primary.locale)
+                Divider()
+                Section("Other languages") {
+                    ForEach(SpeechLanguageOptions.others(including: model.settings.speechLocale)) { Text($0.title).tag($0.locale) }
+                }
+            }.frame(maxWidth: 340)
                 .onChange(of: model.settings.speechLocale) { _, _ in model.speechPreparationStatus = "" ; prepareIfNeeded() }
+            Text(SpeechLanguageOptions.detail(for: model.settings.speechLocale))
+                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             StepCard(state: speechReady ? .done : (model.isPreparingSpeech ? .waiting : .todo),
                      title: speechReady ? "Speech is ready" : "Speech model",
-                     detail: model.speechPreparationStatus.isEmpty ? "Checks the model and gets it ready. Downloads it first if this copy doesn’t include it." : model.speechPreparationStatus) {
+                     detail: model.speechPreparationStatus.isEmpty ? "Checks the speech model and gets it ready. Downloads it first if this copy doesn’t include it." : model.speechPreparationStatus) {
                 if model.isPreparingSpeech {
                     if model.speechPreparationFraction == nil { ProgressView().controlSize(.small) }
                 }
-                else if !speechReady { Button(speechFailed ? "Try Again" : "Prepare Speech") { model.prepareSpeechModel() }.buttonStyle(PrimaryButtonStyle(compact: true)) }
+                else if !speechReady { Button(speechFailed ? "Try again" : SpeechLanguageOptions.setupButtonTitle(locale: model.settings.speechLocale, modelInstalled: LocalSpeechModel.isInstalled)) { model.prepareSpeechModel() }.buttonStyle(PrimaryButtonStyle(compact: true)) }
             }
             if model.isPreparingSpeech, let fraction = model.speechPreparationFraction {
                 ProgressView(value: fraction) {
@@ -234,13 +243,13 @@ struct OnboardingView: View {
                      : "Checking the speech models on this Mac. Nothing is being downloaded. You can continue while this finishes.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             } else if !speechReady {
-                Text("If you skip this, dictation won’t work until speech is prepared. You can do that later in Settings → Speech & typing → Prepare Speech.")
+                Text("If you skip this, dictation won’t work until the speech model is ready. You can do that later in Settings → General → Speech model.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if needsSpeechRecognition && permissions.speechStatus != .authorized {
-                StepCard(state: cardState(permissions.speechStatus), title: "Speech Recognition · \(permissions.speechStatus.title)",
+                StepCard(state: cardState(permissions.speechStatus), title: "Speech recognition · \(permissions.speechStatus.title)",
                          detail: "\(languageName) uses Apple’s on-device recognizer, which needs this permission.") {
-                    permissionButton(permissions.speechStatus, pane: .speechRecognition, request: "Allow Speech Recognition")
+                    permissionButton(permissions.speechStatus, pane: .speechRecognition, request: "Allow speech recognition")
                 }
             }
         }
@@ -253,23 +262,66 @@ struct OnboardingView: View {
 
     private var test: some View {
         VStack(alignment: .leading, spacing: 14) {
-            header("Try it", "Everything below should be green.")
+            header("Try it", "Say a real sentence and watch it appear. Then check that everything below is green.")
+            practice
             checklist
             StepCard(state: .todo, title: "Test paste",
                      detail: model.pasteTestStatus.isEmpty ? "Click the button, then click into a text field in another app, such as Notes. uiui pastes a test line there after 5 seconds." : model.pasteTestStatus) {
-                Button(model.pasteTestRunning ? "Waiting…" : "Test Paste") { model.runPasteTest() }
+                Button(model.pasteTestRunning ? "Waiting…" : "Test paste") { model.runPasteTest() }
                     .disabled(model.pasteTestRunning).controlSize(.small)
             }
-            StepCard(state: .todo, title: "Dictate",
+            StepCard(state: .todo, title: "Dictate in another app",
                      detail: model.dictationFeedback.map(\.compactText)
                         ?? "Open Notes, \(model.settings.voiceTriggerMode == .hold ? "hold" : "press") \(model.settings.voiceTriggerKey.title), say something, then \(model.settings.voiceTriggerMode == .hold ? "release it" : "press it again"). Escape cancels.") { EmptyView() }
         }
     }
 
+    /// A real sentence, dictated through the normal path. With uiui in front there
+    /// is no app to paste into, so the result is copied as usual and shown here.
+    private var practice: some View {
+        let verb = model.settings.voiceTriggerMode == .hold ? "Hold" : "Press"
+        let finish = model.settings.voiceTriggerMode == .hold ? "release it" : "press it again"
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Say this, the way you would normally say it:").font(.system(size: 12, weight: .semibold))
+            Text("“\(PracticeSample.sentence)”")
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .padding(.horizontal, 12).padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
+                .background(UIUIStyle.lime.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+                .textSelection(.enabled)
+            Text("\(verb) \(model.settings.voiceTriggerKey.title), speak, then \(finish). Keep this window in front.")
+                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ZStack(alignment: .topLeading) {
+                Text(practiceText.isEmpty ? (model.voiceIsRecording ? "Listening…" : "Your words appear here") : practiceText)
+                    .font(.system(size: 13)).foregroundStyle(practiceText.isEmpty ? .tertiary : .primary)
+                    .padding(10).frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
+            }
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.primary.opacity(0.14)) }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Practice result")
+            .accessibilityValue(practiceText.isEmpty ? "Empty" : practiceText)
+            if !practiceText.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Text(PracticeSample.message(for: PracticeSample.match(heard: practiceText)))
+                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button("Try again") { practiceText = "" }.controlSize(.small)
+                }
+                Text("A copy of this text is also on your clipboard, as with any dictation that has no app to paste into.")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+            }
+        }.padding(13).frame(maxWidth: .infinity, alignment: .leading)
+            .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
+            .onChange(of: model.lastTypedText) { _, text in
+                // Only text produced while this step is open; nothing earlier is read.
+                if !text.isEmpty { practiceText = text }
+            }
+    }
+
     private var checklist: some View {
         VStack(alignment: .leading, spacing: 7) {
             checkRow("Microphone", ok: permissions.microphoneStatus == .authorized, step: .microphone)
-            if needsSpeechRecognition { checkRow("Speech Recognition", ok: permissions.speechStatus == .authorized, step: .speech) }
+            if needsSpeechRecognition { checkRow("Speech recognition", ok: permissions.speechStatus == .authorized, step: .speech) }
             checkRow("Accessibility (shortcut and paste)", ok: setup.pasteReady && !setup.needsRelaunchForAccessibility, step: .accessibility)
             checkRow("Shortcut \(model.settings.voiceTriggerKey.title)", ok: model.voiceTriggerStatus.contains("is ready"), step: .shortcut)
             checkRow(model.isPreparingSpeech ? "Speech model · \(model.speechPreparationFraction.map { "\(Int($0 * 100))%" } ?? "preparing")" : "Speech model",
@@ -318,8 +370,8 @@ struct OnboardingView: View {
     /// or the speech model unfinished. A running download simply continues.
     private var canSkip: Bool { !stepComplete || step == .speech && !speechReady && !model.isPreparingSpeech }
     private var primaryTitle: String {
-        if step == .welcome { return "Get Started" }
-        if step == .speech && model.isPreparingSpeech { return model.speechDownloadActive ? "Continue While Downloading" : "Continue While Checking" }
+        if step == .welcome { return "Get started" }
+        if step == .speech && model.isPreparingSpeech { return model.speechDownloadActive ? "Continue while downloading" : "Continue while checking" }
         return "Continue"
     }
     private var speechReady: Bool { model.speechPreparationStatus.hasPrefix("Ready") }

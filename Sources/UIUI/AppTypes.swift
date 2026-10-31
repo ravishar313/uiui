@@ -100,6 +100,8 @@ struct UIUISettings: Codable {
     var openOnHover = false
     var quietMode = false
     var soundFeedbackEnabled = true
+    /// Optional trackpad tap on start, stop and cancel. Off unless the user turns it on.
+    var trackpadFeedbackEnabled = false
     var aiEnabled = true
     var speechLocale = "en-IN"
     var saveDictationHistory = true
@@ -115,7 +117,7 @@ struct UIUISettings: Codable {
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case notchEnabled, notchVisualStyle, notchSize, voiceTriggerEnabled, voiceTriggerKey, voiceTriggerMode, openOnHover, quietMode, soundFeedbackEnabled, aiEnabled, speechLocale, saveDictationHistory, keepRecordingRecovery, launchAtLogin, vocabulary, vocabularyScope, customProjects, onboardingCompleted
+        case notchEnabled, notchVisualStyle, notchSize, voiceTriggerEnabled, voiceTriggerKey, voiceTriggerMode, openOnHover, quietMode, soundFeedbackEnabled, trackpadFeedbackEnabled, aiEnabled, speechLocale, saveDictationHistory, keepRecordingRecovery, launchAtLogin, vocabulary, vocabularyScope, customProjects, onboardingCompleted
     }
 
     init(from decoder: Decoder) throws {
@@ -135,6 +137,7 @@ struct UIUISettings: Codable {
         openOnHover = try values.decodeIfPresent(Bool.self, forKey: .openOnHover) ?? false
         quietMode = try values.decodeIfPresent(Bool.self, forKey: .quietMode) ?? false
         soundFeedbackEnabled = try values.decodeIfPresent(Bool.self, forKey: .soundFeedbackEnabled) ?? true
+        trackpadFeedbackEnabled = try values.decodeIfPresent(Bool.self, forKey: .trackpadFeedbackEnabled) ?? false
         aiEnabled = try values.decodeIfPresent(Bool.self, forKey: .aiEnabled) ?? true
         speechLocale = try values.decodeIfPresent(String.self, forKey: .speechLocale) ?? "en-IN"
         saveDictationHistory = try values.decodeIfPresent(Bool.self, forKey: .saveDictationHistory) ?? true

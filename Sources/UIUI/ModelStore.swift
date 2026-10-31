@@ -157,7 +157,7 @@ enum ModelStore {
             throw Failure(message: "The \(kind.rawValue) model does not match what this version of uiui needs.")
         }
         if kind == .phonon {
-            do { try PhononSpeechModel.verify(at: directory) } catch { throw Failure(message: "The Phonon model failed verification.") }
+            do { try PhononSpeechModel.verify(at: directory) } catch { throw Failure(message: "The uiui S1 speech model failed verification.") }
             return
         }
         guard let list = try? JSONDecoder().decode(FileList.self, from: data), !list.files.isEmpty, list.files.count <= 32 else {
