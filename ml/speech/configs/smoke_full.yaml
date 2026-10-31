@@ -1,0 +1,26 @@
+name: smoke-full-synthetic
+mode: full
+tags: [smoke, full, synthetic]
+notes: "SMOKE TEST ONLY: trains on the 70 synthetic TTS clips (overfit by design) to check the loop. Not a real model."
+parent: Phonon-2 (shipping)
+data:
+  sources:
+    - {name: synthetic, manifest: ${UIUI_ML_ROOT}/smoke-src/synthetic-manifest.jsonl, weight: 1.0}
+  batch_size: 8
+  max_secs: 10.0
+  num_workers: 3
+  text_norm: none
+  specaugment: {enabled: true, freq_masks: 2, freq_width: 27, time_masks: 10, time_width: 0.05}
+full: {freeze_bottom: 0}
+optim: {lr: 1.0e-5, betas: [0.9, 0.98], weight_decay: 1.0e-3, min_lr: 0.0, warmup_steps: 10, grad_clip: 1.0, accum: 1}
+train: {total_steps: 200, log_every: 10, tdt_sigma: 0.02, seed: 0}
+ema: {enabled: false, decay: 0.999}
+eval:
+  every: 100
+  at_start: false
+  batch_size: 8
+  best_metric: {set: synthetic, category: ALL, key: wer}
+  sets:
+    - {name: synthetic, manifest: ${UIUI_ML_ROOT}/smoke-src/synthetic-manifest.jsonl}
+    - {name: svarah-30, manifest: ${UIUI_ML_ROOT}/evalsets/svarah-partial/manifest.jsonl, max_clips: 30}
+checkpoint: {every: 100, keep_last: 2, keep_optim: 1}

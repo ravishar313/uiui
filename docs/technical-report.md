@@ -235,4 +235,12 @@ An unlicensed NPTEL mirror was downloaded during early work. It is not in the fi
 
 ## 11. Reproducibility
 
-Training code, datasets, per-clip results and checkpoints are not in this repository. Audio can't be redistributed, and the pipeline depends on our machines. This report describes the recipe. The app verifies the shipped model against pinned hashes in `resources/Phonon/assets.json`.
+The training, data, evaluation, export and cleanup code is in [`ml/`](../ml/README.md), under Apache-2.0. It is a cleaned copy: machine paths were replaced with one workspace root, and debugging scripts were left out.
+
+- **Not included:** audio, manifests, checkpoints, evaluation sets, per-clip results and the transliteration variant tables. The variant tables can be rebuilt with `ml/speech/eval/evalx/build_variants.py`, but the hand-curated part cannot be recreated exactly, so rebuilt scores may differ slightly.
+- **Verified after cleaning:** all code compiles and imports, and tests that need no data pass. One scorer test needs the variant tables, and it passed when they were supplied.
+- **Not verified after cleaning:** no training, data, export or benchmark run was repeated end to end.
+- **Small known change:** one name in the sentence generators was replaced, so regenerated synthetic text will differ slightly from what we trained on.
+- **Possible evaluation influence:** the romanisation lexicon was built from training text and from evaluation-set reference text. It maps vocabulary only, but evaluation words may be better covered than unseen words.
+
+The app verifies the shipped model against pinned hashes in `resources/Phonon/assets.json`.

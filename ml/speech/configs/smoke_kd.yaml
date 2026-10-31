@@ -1,0 +1,37 @@
+# Round 2 (2x RTX 5090): five-value QAT from the shipping Phonon-2 container, ~520 h, 2 epochs.
+# Fixes from pilot-full-v1: clips up to 15 s (recovers ~135 h incl. most of LibriSpeech), English ~38% of sampling
+# (Common Voice India full + LibriSpeech) to stop Hindi spellings bleeding into English. QAT keeps every encoder
+# linear on the shipped five-value grid, so evals here already reflect the shipping quantization.
+name: smoke-kd
+mode: qat
+tags: [smoke, kd]
+parent: "pilot-full-v1"
+notes: "KD smoke (dev-r3)"
+data:
+  sources:
+    - {name: indicvoices,  manifest: ${UIUI_ML_ROOT}/data/manifests/indicvoices/train.jsonl,  weight: 0.13}
+    - {name: indicvoices2, manifest: ${UIUI_ML_ROOT}/data/manifests/indicvoices2/train.jsonl, weight: 0.15}
+    - {name: vaani,        manifest: ${UIUI_ML_ROOT}/data/manifests/vaani/train.jsonl,        weight: 0.15}
+    - {name: mucs,         manifest: ${UIUI_ML_ROOT}/data/manifests/mucs/train.jsonl,         weight: 0.11}
+    - {name: kathbath,     manifest: ${UIUI_ML_ROOT}/data/manifests/kathbath/train.jsonl,     weight: 0.04}
+    - {name: shrutilipi,   manifest: ${UIUI_ML_ROOT}/data/manifests/shrutilipi/train.jsonl,   weight: 0.02}
+    - {name: cvindia_full, manifest: ${UIUI_ML_ROOT}/data/manifests/cvindia_full/train.jsonl, weight: 0.25}
+    - {name: librispeech,  manifest: ${UIUI_ML_ROOT}/data/manifests/librispeech/train.jsonl,  weight: 0.15}
+  batch_size: 4           # per GPU; 15 s clips (12 OOMed at >28 GB in QAT)
+  max_secs: 15.0
+  num_workers: 3
+  text_norm: none
+  specaugment: {enabled: true}
+optim: {lr: 8.0e-5, betas: [0.9, 0.98], weight_decay: 1.0e-3, min_lr: 1.0e-6, warmup_steps: 10, grad_clip: 1.0, accum: 1}
+train: {total_steps: 60, log_every: 10, tdt_sigma: 0.02, seed: 1, ddp_grad_bf16: true, joint_chunk: 8}
+ema: {enabled: true, decay: 0.999}
+model: {bn_eval: true}
+precision: bf16
+checkpoint: {every: 100000, every_minutes: 0, keep_last: 1, keep_optim: 1, dtype: float32}
+out_dir: ${UIUI_ML_ROOT}/dev-r3/out
+distill:
+  teacher: ${UIUI_ML_ROOT}/train/out/1027-003218-pilot-full-v1/best/model.safetensors
+  enc_weight: 1.0
+  logit_weight: 0.5
+  temperature: 1.0
+  layers: [11, 23]

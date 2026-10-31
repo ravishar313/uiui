@@ -72,6 +72,7 @@ Packaging and releases are described in [updates](docs/updates.md).
 | `resources/` | App resources, model manifests, licences and notices |
 | `scripts/` | Build, packaging and asset verification |
 | `docs/` | Technical report, updates, signing and notch styles |
+| `ml/` | Code for training, evaluating and exporting the models. See [its README](ml/README.md) |
 
 ## Licences
 

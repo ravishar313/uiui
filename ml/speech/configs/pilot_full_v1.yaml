@@ -1,0 +1,39 @@
+# Pilot v1 (2x RTX 5090): full fine-tune on the ~340 h pilot mix, 2 epochs.
+# Hinglish ~65% / Indian English ~20% / plain English ~15% by sampling weight.
+name: pilot-full-v1
+mode: full
+tags: [pilot, full, hinglish]
+parent: "Phonon-2 (our export, unmodified)"
+notes: "First real run. Full fine-tune, lr 5e-5 cosine, EMA 0.999, all encoder blocks trainable. Checkpoint selection on dev-mix (speaker-disjoint dev splits); test sets are report-only."
+data:
+  sources:
+    - {name: indicvoices, manifest: ${UIUI_ML_ROOT}/data/manifests/indicvoices/train.jsonl, weight: 0.30}
+    - {name: mucs,        manifest: ${UIUI_ML_ROOT}/data/manifests/mucs/train.jsonl,        weight: 0.20}
+    - {name: kathbath,    manifest: ${UIUI_ML_ROOT}/data/manifests/kathbath/train.jsonl,    weight: 0.10}
+    - {name: shrutilipi,  manifest: ${UIUI_ML_ROOT}/data/manifests/shrutilipi/train.jsonl,  weight: 0.05}
+    - {name: cvindia,     manifest: ${UIUI_ML_ROOT}/data/manifests/cvindia/train.jsonl,     weight: 0.20}
+    - {name: librispeech, manifest: ${UIUI_ML_ROOT}/data/manifests/librispeech/train.jsonl, weight: 0.15}
+  batch_size: 16          # per GPU
+  max_secs: 10.0
+  num_workers: 6
+  text_norm: none
+  specaugment: {enabled: true}
+optim: {lr: 5.0e-5, betas: [0.9, 0.98], weight_decay: 1.0e-3, min_lr: 1.0e-6, warmup_steps: 500, grad_clip: 1.0, accum: 1}
+train: {total_steps: 12000, log_every: 20, tdt_sigma: 0.02, seed: 0, ddp_grad_bf16: true}
+ema: {enabled: true, decay: 0.999}
+model: {bn_eval: true}
+precision: bf16
+eval:
+  every: 2000
+  at_start: true
+  batch_size: 16
+  best_metric: {set: dev-mix, category: ALL, key: wer}
+  sets:
+    - {name: dev-mix,           manifest: ${UIUI_ML_ROOT}/data/manifests/dev-mix.jsonl}
+    - {name: hiacc,             manifest: ${UIUI_ML_ROOT}/data/evalsets-lexicon/hiacc/manifest.jsonl, max_clips: 150}
+    - {name: mucs-hien-test,    manifest: ${UIUI_ML_ROOT}/data/evalsets-lexicon/mucs-hien-test/manifest.jsonl, max_clips: 150}
+    - {name: fleurs-hi,         manifest: ${UIUI_ML_ROOT}/data/evalsets-lexicon/fleurs-hi/manifest.jsonl, max_clips: 100}
+    - {name: svarah-partial,    manifest: ${UIUI_ML_ROOT}/evalsets/svarah-partial/manifest.jsonl, max_clips: 150}
+    - {name: monsoon-en-in,     manifest: ${UIUI_ML_ROOT}/evalsets/monsoon-en-in/manifest.jsonl, max_clips: 100}
+    - {name: librispeech-clean, manifest: ${UIUI_ML_ROOT}/evalsets/librispeech-clean/manifest.jsonl, max_clips: 100}
+checkpoint: {every: 2000, every_minutes: 6, keep_last: 2, keep_optim: 2, dtype: float32}

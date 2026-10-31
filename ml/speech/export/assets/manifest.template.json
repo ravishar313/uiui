@@ -1,0 +1,33 @@
+{
+ "name": "Phonon-2 Core ML",
+ "version": "3.0",
+ "container_sha256": "4b6bfa3a12cc3c4e0a54f2ab3ec4ca7a842b09e5c7ecfc8e7ca0ac6cc8c11468",
+ "multifunction": "Phonon-2.mlpackage",
+ "functions_s": [
+  5,
+  10,
+  15,
+  35
+ ],
+ "program_prefix": "enc_",
+ "frames_rule": "hf",
+ "pos_input": {
+  "5": false,
+  "10": false,
+  "15": false,
+  "35": true
+ },
+ "io": "float32",
+ "long_audio": "windows15",
+ "window_s": 15,
+ "band_min_s": 10,
+ "overlap_s": 2.0,
+ "single_shot_max_s": 35,
+ "residual_scale": 64.0,
+ "weights": "exact five-value palettes (sparse-g16-6b: 1-bit zero mask + 64-entry fp16 LUT per 16 output rows), 16-bit float activations; one weight blob shared by all functions; relative keys constant-folded for the 15 s function and sliced from that one table for the 5 s and 10 s functions",
+ "inputs": "mel [1,128,T] normalised log-mel, zero-padded to the function's length; m1/m2/m3 frame masks after each stride-2 conv; kmask additive key mask over encoder frames (0 / -1e4); pos [1,2*T3-1,1024] relative-position table (functions with pos_input only)",
+ "output": "enc [1,T3,640] = encoder output after the projector; greedy TDT (durations 0-4, blank 8192, at most 10 symbols per frame) with decoder.bin",
+ "decoder_bin": "prediction network, joint and vocabulary: 6-bit tables packed 4 codes per 3 bytes (format v2) with 16-bit float row scales",
+ "min_os": "macOS 15 / iOS 18",
+ "compute_units": "cpuAndNeuralEngine"
+}

@@ -1,0 +1,19 @@
+# s/step + memory benchmark at the real shape: batch 8 x ~9.6 s (tiled synthetic), no eval. Use --set mode=full|lora|qat|decoder
+name: bench-real
+mode: lora
+tags: [smoke, bench]
+notes: "BENCH: real IndicVoices clips (<=10 s), duration-bucketed."
+data:
+  sources:
+    - {name: indicvoices, manifest: ${UIUI_ML_ROOT}/data/manifests/indicvoices/train.jsonl, weight: 1.0}
+  batch_size: 8
+  max_secs: 10.0
+  num_workers: 6
+  text_norm: none
+  specaugment: {enabled: true}
+lora: {r: 16, alpha: 32, top_k: 8}
+optim: {lr: 1.0e-5, betas: [0.9, 0.98], weight_decay: 1.0e-3, warmup_steps: 0, grad_clip: 1.0, accum: 1}
+train: {total_steps: 30, log_every: 10, seed: 0}
+eval: {sets: []}
+checkpoint: {every: 100000}
+precision: bf16

@@ -1,0 +1,123 @@
+checkpoint:
+  every: 2000
+  every_minutes: 0
+  keep_last: 3
+  keep_optim: 1
+  dtype: float32
+data:
+  augment:
+    babble_list: ${UIUI_ML_ROOT}/data/aug/babble.jsonl
+    gain_db:
+    - -6
+    - 6
+    noise:
+      babble_prob: 0.3
+      prob: 0.6
+      snr_db:
+      - 5
+      - 25
+    noise_list: ${UIUI_ML_ROOT}/data/aug/noise.jsonl
+    prob: 0.5
+    rir:
+      prob: 0.3
+    rir_list: ${UIUI_ML_ROOT}/data/aug/rir.jsonl
+    seed: 0
+    speed:
+      factors:
+      - 0.9
+      - 1.1
+      prob: 0.3
+  batch_size: 6
+  max_secs: 15.0
+  num_workers: 6
+  sources:
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/nptel2020/train.jsonl
+    name: nptel
+    weight: 0.1711
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/cvindia_full/train.jsonl
+    name: cvindia_full
+    weight: 0.1789
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/mucs_v2_fmt/train.jsonl
+    name: mucs
+    weight: 0.0982
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/indicvoices_hy_fmt/train.jsonl
+    name: indicvoices
+    weight: 0.0409
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/indicvoices2_hy_fmt/train.jsonl
+    name: indicvoices2
+    weight: 0.0409
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/shrutilipi_full_v2_fmt/train.jsonl
+    name: shrutilipi
+    weight: 0.0245
+  - manifest: ${UIUI_ML_ROOT}/tts/out/train/manifest.jsonl
+    name: workplace_tts
+    weight: 0.0818
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/vaani_v2_fmt/train.jsonl
+    name: vaani
+    weight: 0.0245
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/kathbath_v2_fmt/train.jsonl
+    name: kathbath
+    weight: 0.0164
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/librispeech/train.jsonl
+    name: librispeech
+    weight: 0.1227
+  - manifest: ${UIUI_ML_ROOT}/data/manifests/nptel_en2indic_fmt2/train.jsonl
+    name: nptel_en2indic
+    weight: 0.2
+  specaugment:
+    enabled: true
+  text_norm: none
+ema:
+  decay: 0.998
+  enabled: true
+eval:
+  at_start: false
+  batch_size: 16
+  every: 2000
+  save_rows: true
+  sets:
+  - manifest: ${UIUI_ML_ROOT}/ar/locked/dev-sel.jsonl
+    name: dev-sel
+  - manifest: ${UIUI_ML_ROOT}/ar/locked/vibe.jsonl
+    name: vibe
+mode: qat
+model:
+  bn_eval: true
+  init_ckpt: ${UIUI_ML_ROOT}/ar/out/ar-008-no-kd/step-0001467
+  init_weights: ${UIUI_ML_ROOT}/train/out/1027-044123-teacher-dense-r2/best/model.safetensors
+name: full-1028-v1
+notes: 'Full run: 4-bit (lut4) student, no distillation, from ar-008-no-kd. Data =
+  010b mix (en55 + formatted Hinglish labels + NPTEL en2indic fmt2 + noise/reverb
+  aug). 20k steps, lr 3e-5 cosine, scored on dev-sel every 2000 steps.'
+optim:
+  accum: 3
+  betas:
+  - 0.9
+  - 0.98
+  grad_clip: 1.0
+  lr: 3.0e-05
+  min_lr: 1.0e-06
+  warmup_steps: 300
+  weight_decay: 0.001
+out_dir: ${UIUI_ML_ROOT}/train/out
+parent: ar-008-no-kd
+precision: bf16
+qat:
+  bits4:
+  - ^encoder\.layers\.
+  bits4_grid: lut4
+  bits4_init: current
+run_id: full-1028-v1
+tags:
+- full-run
+- qat
+- lut4
+- hinglish
+- no-kd
+train:
+  ddp_grad_bf16: true
+  joint_chunk: 8
+  log_every: 20
+  seed: 1028
+  tdt_sigma: 0.02
+  total_steps: 20000

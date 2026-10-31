@@ -1,0 +1,41 @@
+# Pinned versions are those of the cleanup/ virtualenv used for the text-cleanup work.
+# Unpinned entries were used in other environments (training machine, Mac export/bench envs) and have no recorded pin here.
+# Several stages need different subsets; see README.md for which stage needs what.
+
+# core (pinned)
+numpy==2.5.4
+pyyaml==6.0.3
+torch==2.14.1
+transformers==5.21.0
+safetensors==0.8.0
+sentencepiece==0.2.2
+regex==2026.9.29
+huggingface_hub==2.3.0
+onnxruntime==1.31.1
+onnx==1.23.2
+onnxscript==0.7.2
+
+# audio / data / training
+soundfile
+scipy
+librosa
+numba
+pyarrow
+scikit-learn
+speechbrain
+wordfreq
+
+# export (macOS): Core ML conversion
+coremltools
+
+# n-gram LM decoding
+kenlm
+
+# Mac-only benchmarking and local LLM helpers (Apple silicon)
+mlx
+mlx-lm
+mlx-whisper
+mlx-audio
+
+# tests
+pytest
