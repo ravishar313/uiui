@@ -45,6 +45,11 @@ public struct VocabularyEntry: Identifiable, Codable, Hashable, Sendable {
     public var project: String
     public init(id: UUID = UUID(), heard: String, replacement: String, project: String = "All projects") { self.id = id; self.heard = heard; self.replacement = replacement; self.project = project }
 
+    /// Just a spelling, not a rule: uiui also listens for words that sound like it.
+    public var isSpellingOnly: Bool {
+        heard.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(replacement.trimmingCharacters(in: .whitespaces)) == .orderedSame
+    }
+
     /// Built-in spellings that always apply after the user's own entries, so a
     /// user entry for the same phrase wins. Speech models hear the app's name as
     /// letters or as two words.

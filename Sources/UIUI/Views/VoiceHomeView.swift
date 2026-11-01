@@ -4,8 +4,9 @@ import UIUICore
 /// Home leads with the last dictation and the shortcut that makes the next one.
 struct VoiceHomeView: View {
     let model: AppModel
+    var showsUsage = true
     private var microphoneActive: Bool { model.microphoneIsActive }
-    private var modeAccent: Color { UIUIStyle.lime }
+    private var modeAccent: Color { UIUIStyle.accent }
     private var showingLiveTranscript: Bool {
         !model.voiceTranscript.isEmpty && (model.voiceIsRecording || microphoneActive || model.voice.state == "finishing")
     }
@@ -31,6 +32,7 @@ struct VoiceHomeView: View {
                 mainCard.frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
                 shortcutCard.frame(width: 268, alignment: .topLeading)
             }.fixedSize(horizontal: false, vertical: true)
+            if showsUsage { UsageOverview(model: model) }
             if let updater = model.updater, let release = updater.pendingNotice {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down.circle").accessibilityHidden(true)

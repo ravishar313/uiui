@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import UIUICore
 
 @MainActor
 protocol TriggeredVoiceCapture: AnyObject {
@@ -82,6 +83,9 @@ final class TriggeredVoice: NSObject {
     @ObservationIgnored private var working = false
     @ObservationIgnored private var finishRequestedAt: UInt64?
     @ObservationIgnored private var terminationObserver: NSObjectProtocol?
+    /// Words removed with Backspace in this capture. Every hypothesis passes through it.
+    @ObservationIgnored private var erasure = TranscriptErasure()
+    @ObservationIgnored private var rawPartial = ""
 
     override convenience init() {
         self.init(capture: SpeechCapture())
@@ -120,6 +124,8 @@ final class TriggeredVoice: NSObject {
         activeCapture = token
         finishRequestedAt = nil
         partialCommand = ""
+        erasure = TranscriptErasure()
+        rawPartial = ""
         lastError = nil
         state = "starting"
         onStateChanged?()
@@ -129,8 +135,10 @@ final class TriggeredVoice: NSObject {
         }
         capture.onPartial = { [weak self] text in
             guard let self, self.isCurrentCapture(token) else { return }
-            self.partialCommand = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.onPartial?(text)
+            self.rawPartial = text
+            let visible = self.erasure.apply(to: text)
+            self.partialCommand = visible.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.onPartial?(visible)
         }
         capture.onFinal = { [weak self] text in self?.receivedFinal(text, token: token) }
         capture.onCompletion = { [weak self] completion in self?.receivedCompletion(completion, token: token) }
@@ -229,6 +237,18 @@ final class TriggeredVoice: NSObject {
         return true
     }
 
+    /// True while Backspace edits this capture rather than the app behind it.
+    var acceptsWordErasure: Bool { state == "capturing" && isRecording }
+
+    /// Removes the last word from the live transcript. The microphone keeps listening.
+    func eraseLastWord() {
+        guard let token = activeCapture, isCurrentCapture(token), acceptsWordErasure else { return }
+        erasure.eraseLastWord(from: rawPartial)
+        let visible = erasure.apply(to: rawPartial)
+        partialCommand = visible.trimmingCharacters(in: .whitespacesAndNewlines)
+        onPartial?(visible)
+    }
+
     /// Drops transcript text a finished capture still holds (an incomplete or failed
     /// one). No effect while a capture is starting, running or finishing.
     func discardHeldText() {
@@ -262,7 +282,7 @@ final class TriggeredVoice: NSObject {
     private func receivedCompletion(_ completion: SpeechCompletion, token: UInt64) {
         guard isCurrentCapture(token) else { return }
         let endedWhileRecording = isRecording
-        let completion = SpeechCompletion(text: completion.text, reason: completion.reason,
+        let completion = SpeechCompletion(text: erasure.apply(to: completion.text), reason: completion.reason,
                                           wasExplicitlyStopped: completion.wasExplicitlyStopped && finishWasUserInitiated)
         activeCapture = nil
         starting = false

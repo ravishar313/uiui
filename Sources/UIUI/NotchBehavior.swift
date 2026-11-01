@@ -85,9 +85,9 @@ struct NotchSignalMonitor: Equatable {
     }
 }
 
-/// A small timer appears only on long recordings.
+/// The recording time sits in the right wing for the whole recording.
 enum NotchTimerPolicy {
-    static let threshold: TimeInterval = 30
+    static let threshold: TimeInterval = 0
     static func isVisible(elapsed: TimeInterval) -> Bool { elapsed >= threshold }
     static func text(_ seconds: TimeInterval) -> String {
         let whole = max(0, Int(seconds))
@@ -147,7 +147,8 @@ struct NotchTranscriptFollow: Equatable {
 
 /// Which display carries the notch and what shape it takes. A display with a camera
 /// housing gets the hardware-matched notch; anything else gets a floating pill
-/// below the menu bar. The pill never invents a camera.
+/// below the menu bar. The pill never invents a camera. While in use the notch sits
+/// on the display holding keyboard focus and stays there until it is done.
 struct NotchPlacement: Equatable {
     enum Shape: Equatable { case cameraNotch, floatingPill }
     struct Screen: Equatable {
@@ -155,6 +156,7 @@ struct NotchPlacement: Equatable {
         var visibleFrame: CGRect
         var safeAreaTop: CGFloat
         var isMain = false
+        var id: UInt32 = 0
         var hasCamera: Bool { safeAreaTop > 0 }
     }
 
@@ -166,9 +168,12 @@ struct NotchPlacement: Equatable {
 
     static let pillGapBelowMenuBar: CGFloat = 6
 
-    static func decide(screens: [Screen]) -> NotchPlacement? {
+    static func decide(screens: [Screen], inUse: Bool = false, heldDisplay: UInt32? = nil) -> NotchPlacement? {
         guard !screens.isEmpty else { return nil }
-        let index = screens.firstIndex { $0.hasCamera } ?? screens.firstIndex { $0.isMain } ?? 0
+        let camera = screens.firstIndex { $0.hasCamera }
+        let main = screens.firstIndex { $0.isMain }
+        let held = heldDisplay.flatMap { id in screens.firstIndex { $0.id == id } }
+        let index = (inUse ? held ?? main ?? camera : camera ?? main) ?? 0
         let screen = screens[index]
         if screen.hasCamera {
             return NotchPlacement(screenIndex: index, shape: .cameraNotch, topEdge: screen.frame.maxY, centerX: screen.frame.midX)

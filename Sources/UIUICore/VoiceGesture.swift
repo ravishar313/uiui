@@ -1,6 +1,6 @@
 import Foundation
 
-public enum VoiceGestureCaptureKind: Equatable, Sendable { case dictation }
+public enum VoiceGestureCaptureKind: Equatable, Sendable { case dictation, agentAnswer }
 public enum VoiceGestureEvent: Equatable, Sendable { case pressed, released, holdThreshold, cancelled, reset }
 public enum VoiceGestureAction: Equatable, Sendable {
     case startDictation, finish, cancelCapture, scheduleHold, cancelHold

@@ -3,13 +3,14 @@ import UIUICore
 
 /// The four places settings live. Titles are what people see; nothing here is stored.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, shortcut, dictionary, privacy
+    case general, shortcut, dictionary, agents, privacy
     var id: String { rawValue }
     var title: String {
         switch self {
         case .general: "General"
         case .shortcut: "Shortcut"
         case .dictionary: "Dictionary"
+        case .agents: "Agents"
         case .privacy: "Privacy"
         }
     }
@@ -20,6 +21,7 @@ struct SettingsView: View {
     @State private var pane: SettingsPane
     @State private var heard = ""
     @State private var replacement = ""
+    @State private var usesShorthand = false
     @State private var vocabularyProject = "All projects"
     @State private var editingVocabularyID: UUID?
     @State private var dictionaryIssue: String?
@@ -48,7 +50,7 @@ struct SettingsView: View {
             .accessibilityLabel("Settings section")
             .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 10)
             .background {
-                // Command-1 to Command-4 switch sections from the keyboard.
+                // Command-1 to Command-5 switch sections from the keyboard.
                 HStack {
                     ForEach(Array(SettingsPane.allCases.enumerated()), id: \.element) { index, item in
                         Button(item.title) { pane = item }
@@ -62,6 +64,7 @@ struct SettingsView: View {
                     case .general: general
                     case .shortcut: shortcut
                     case .dictionary: dictionary
+                    case .agents: AgentSettingsPane(model: model)
                     case .privacy: privacy
                     }
                     if pane == .general { ModelStatusView(model: model) }
@@ -123,7 +126,7 @@ struct SettingsView: View {
                 Spacer()
                 if model.isPreparingSpeech {
                     if let fraction = model.speechPreparationFraction {
-                        ProgressView(value: fraction).progressViewStyle(.linear).tint(UIUIStyle.lime).frame(width: 120)
+                        ProgressView(value: fraction).progressViewStyle(.linear).tint(UIUIStyle.accent).frame(width: 120)
                             .accessibilityLabel("Speech model progress").accessibilityValue("\(Int(fraction * 100)) percent")
                     } else { ProgressView().controlSize(.small).accessibilityLabel("Setting up speech") }
                 } else {
@@ -156,6 +159,8 @@ struct SettingsView: View {
             Divider().opacity(0.4)
             NotchSizePicker(selection: $model.settings.notchSize)
             Divider().opacity(0.4)
+            AccentPicker(choice: $model.settings.accent, customHex: $model.settings.accentCustomHex)
+            Divider().opacity(0.4)
             settingToggle("Open on hover", detail: "Opens the notch when you point at it.", value: $model.settings.openOnHover)
             Divider().opacity(0.4)
             settingToggle("Quiet mode", detail: "Keeps the notch closed when you point at it, even if Open on hover is on.", value: $model.settings.quietMode)
@@ -164,6 +169,10 @@ struct SettingsView: View {
         }
         SettingsCard(title: "Sound and feel", symbol: "speaker.wave.1", compact: true) {
             settingToggle("Sound feedback", detail: "A soft sound when recording starts, finishes or is cancelled.", value: $model.settings.soundFeedbackEnabled)
+            if model.settings.soundFeedbackEnabled {
+                SoundChoice(pack: $model.settings.soundPack, volume: $model.settings.soundVolume,
+                            preview: { model.previewRecordingSound() })
+            }
             Divider().opacity(0.4)
             settingToggle("Trackpad feedback", detail: "A light tap on the trackpad at the same moments. You feel it only while a finger is on the trackpad.", value: $model.settings.trackpadFeedbackEnabled)
         }
@@ -214,17 +223,19 @@ struct SettingsView: View {
 
     @ViewBuilder private var dictionary: some View {
         SettingsCard(title: "Dictionary", symbol: "text.badge.checkmark", compact: true) {
-            Text("Names, spellings and shorthand. uiui writes your version whenever it hears the words on the left. Saved on this Mac.")
+            Text("Add a name or word the way you want it written. uiui listens for anything that sounds like it. Saved on this Mac.")
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if model.settings.vocabulary.isEmpty {
-                Text("No words yet. Add one below, like “priya” becomes “Priya”.")
+                Text("No words yet. Add a name below, like Priya.")
                     .font(.system(size: 11)).foregroundStyle(.tertiary).padding(.vertical, 7)
             } else {
                 ForEach(model.settings.vocabulary) { entry in
                     HStack(spacing: 10) {
                         Group {
-                            Text(entry.heard).font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: "arrow.right").font(.system(size: 10)).foregroundStyle(.tertiary).accessibilityHidden(true)
+                            if !entry.isSpellingOnly {
+                                Text(entry.heard).font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading)
+                                Image(systemName: "arrow.right").font(.system(size: 10)).foregroundStyle(.tertiary).accessibilityHidden(true)
+                            }
                             Text(entry.replacement).font(.system(size: 11, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading)
                             if entry.project != "All projects" {
                                 Text(entry.project).font(.system(size: 9)).foregroundStyle(.tertiary)
@@ -233,7 +244,8 @@ struct SettingsView: View {
                         }.accessibilityElement(children: .combine)
                         QuietIconButton(symbol: "pencil", label: "Edit \(entry.replacement)") {
                             editingVocabularyID = entry.id
-                            heard = entry.heard; replacement = entry.replacement; vocabularyProject = entry.project
+                            heard = entry.isSpellingOnly ? "" : entry.heard; replacement = entry.replacement; vocabularyProject = entry.project
+                            usesShorthand = !entry.isSpellingOnly
                         }
                         QuietIconButton(symbol: "minus.circle", label: "Remove \(entry.replacement)") {
                             model.settings.vocabulary.removeAll { $0.id == entry.id }
@@ -244,15 +256,20 @@ struct SettingsView: View {
             }
             Divider().opacity(0.4)
             HStack(spacing: 10) {
-                TextField("When I say…", text: $heard).textFieldStyle(.roundedBorder).accessibilityLabel("When I say")
-                Image(systemName: "arrow.right").font(.system(size: 10)).foregroundStyle(.secondary).accessibilityHidden(true)
-                TextField("Write this", text: $replacement).textFieldStyle(.roundedBorder).accessibilityLabel("Write this")
+                if usesShorthand {
+                    TextField("When I say…", text: $heard).textFieldStyle(.roundedBorder).accessibilityLabel("When I say")
+                    Image(systemName: "arrow.right").font(.system(size: 10)).foregroundStyle(.secondary).accessibilityHidden(true)
+                }
+                TextField(usesShorthand ? "Write this" : "Name or word", text: $replacement).textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(usesShorthand ? "Write this" : "Name or word")
             }.font(.system(size: 11))
             HStack {
+                Toggle("Say one thing, write another", isOn: $usesShorthand).toggleStyle(.checkbox)
+                    .help("For shorthand, like “q three” written as Q3. Names don’t need this.")
                 Spacer()
                 if editingVocabularyID != nil { Button("Cancel edit") { resetDictionaryForm() } }
                 Button(editingVocabularyID == nil ? "Add word" : "Save word") { saveWord() }
-                    .disabled(heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (usesShorthand && heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             }.font(.system(size: 11))
             if let dictionaryIssue {
                 Text(dictionaryIssue).font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
@@ -278,18 +295,19 @@ struct SettingsView: View {
 
     private func saveWord() {
         let original = model.settings.vocabulary.first { $0.id == editingVocabularyID }
-        guard model.addVocabulary(heard: heard, replacement: replacement, project: vocabularyProject) else {
+        let spoken = usesShorthand ? heard : replacement
+        guard model.addVocabulary(heard: spoken, replacement: replacement, project: vocabularyProject) else {
             dictionaryIssue = "Use 1–120 characters for each term, without line breaks or control characters."
             return
         }
-        if let original, original.heard.caseInsensitiveCompare(heard.trimmingCharacters(in: .whitespaces)) != .orderedSame {
+        if let original, original.heard.caseInsensitiveCompare(spoken.trimmingCharacters(in: .whitespaces)) != .orderedSame {
             model.settings.vocabulary.removeAll { $0.id == original.id }
         }
         resetDictionaryForm()
     }
 
     private func resetDictionaryForm() {
-        editingVocabularyID = nil; dictionaryIssue = nil; heard = ""; replacement = ""; vocabularyProject = "All projects"
+        editingVocabularyID = nil; dictionaryIssue = nil; heard = ""; replacement = ""; vocabularyProject = "All projects"; usesShorthand = false
     }
 
     // MARK: Privacy
@@ -299,14 +317,14 @@ struct SettingsView: View {
             privacyLine("Dictation history", "The text of finished dictations, when “Keep dictation history” is on.")
             privacyLine("Unfinished recording drafts", "The last 20 drafts of recognized text, when drafts are kept.")
             privacyLine("Dictionary and settings", "Your words, shortcut, language and appearance choices.")
-            privacyLine("Usage counts", "How long dictation took and how many words. Never the words themselves.")
+            privacyLine("Usage counts", "How long dictation took, how many words, and how often agents asked and were answered. Never the words themselves.")
             Text("uiui does not save raw audio. Sound is turned into text as you speak and then discarded.")
                 .font(.system(size: 11, weight: .medium)).fixedSize(horizontal: false, vertical: true)
         }
         SettingsCard(title: "Never sent anywhere", symbol: "lock", compact: true) {
             Text("Your voice and your text never leave this Mac. Speech recognition and punctuation both run on the device.")
                 .font(.system(size: 11, weight: .medium)).fixedSize(horizontal: false, vertical: true)
-            Text("uiui uses the internet only to check for new versions of uiui, to download an update you choose to install, and to download speech models when you ask. Those requests carry no audio, text or personal data. Hindi uses Apple’s on-device speech, and macOS itself may download Hindi language data. When uiui pastes, it uses your clipboard.")
+            Text("uiui uses the internet only to check for new versions of uiui, to download an update you choose to install, and to download speech models when you ask. Those requests carry no audio, text or personal data. Hindi uses Apple’s on-device speech, and macOS itself may download Hindi language data. When uiui pastes, it uses your clipboard. If you turn on Agents, each answer you give goes to the agent that asked.")
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         SettingsCard(title: "What to keep", symbol: "clock.arrow.circlepath", compact: true) {

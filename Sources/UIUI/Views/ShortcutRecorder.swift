@@ -24,7 +24,7 @@ struct ShortcutRecorder: View {
                     .background(.primary.opacity(recording ? 0.07 : 0.035), in: RoundedRectangle(cornerRadius: 7))
                     .overlay {
                         RoundedRectangle(cornerRadius: 7)
-                            .strokeBorder(recording ? UIUIStyle.lime : Color.primary.opacity(0.12), lineWidth: recording ? 1.5 : 0.75)
+                            .strokeBorder(recording ? UIUIStyle.accent : Color.primary.opacity(0.12), lineWidth: recording ? 1.5 : 0.75)
                     }
                     .accessibilityLabel(recording ? "Recording shortcut" : "Voice shortcut \(model.settings.voiceTriggerKey.title)")
                 Button(recording ? "Cancel" : "Record shortcut…") { recording ? stop() : start() }

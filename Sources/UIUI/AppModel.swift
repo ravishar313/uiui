@@ -35,7 +35,12 @@ final class AppModel {
                 stopVoiceSession()
             }
             recordingRecovery.enabled = settings.keepRecordingRecovery
+            UIUIStyle.apply(settings.accent, customHex: settings.accentCustomHex)
             saveSettings(); onSettingsChanged?()
+            if oldValue.notchVisualStyle != settings.notchVisualStyle || oldValue.notchSize != settings.notchSize
+                || oldValue.accent != settings.accent || oldValue.accentCustomHex != settings.accentCustomHex {
+                playNotchAppearancePreview()
+            }
             if oldValue.voiceTriggerEnabled != settings.voiceTriggerEnabled || oldValue.speechLocale != settings.speechLocale {
                 onSpeechPreferencesChanged?()
             }
@@ -48,6 +53,9 @@ final class AppModel {
     @ObservationIgnored var explicitlyOpenedRecoveryDraftID: UUID?
     let speech = SpeechCapture()
     let notchExtras = NotchCaptureExtras()
+    let agentAsk = AgentAskState()
+    @ObservationIgnored var agentAskServer: AgentAskServer?
+    @ObservationIgnored var onAskKeyChanged: (() -> Void)?
     let voice: TriggeredVoice
     var voiceTriggerStatus = "Shortcut ready · microphone off"
     var voiceInputKind: VoiceGestureCaptureKind = .dictation
@@ -173,6 +181,7 @@ final class AppModel {
     @ObservationIgnored var pasteTestTask: Task<Void, Never>?
     @ObservationIgnored var updater: AppUpdater?
     @ObservationIgnored var onOpenOnboarding: (() -> Void)?
+    @ObservationIgnored var notchAppearancePreview: Task<Void, Never>?
     /// Owns the entire manual dictation result, including final delivery.
     var manualCleanupInProgress = false
     @ObservationIgnored var speechPreparationTask: Task<Void, Never>?
@@ -183,6 +192,7 @@ final class AppModel {
     @ObservationIgnored var manualDeliveryTask: Task<Void, Never>?
     @ObservationIgnored private let recordingSounds = RecordingSoundFeedback()
     @ObservationIgnored private var systemServicesEnabled = false
+    var systemServicesAreEnabled: Bool { systemServicesEnabled }
     private var searchResults: [CaptureItem]?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let dataDirectory: URL
@@ -251,6 +261,8 @@ final class AppModel {
         self.dataDirectory = dataDirectory ?? Self.defaultDataDirectory
         if let data = defaults.data(forKey: "uiui.settings"), let stored = try? JSONDecoder().decode(UIUISettings.self, from: data) { settings = stored }
         else { settings = UIUISettings() }
+        // didSet does not run during init, so the saved colour is applied here.
+        UIUIStyle.apply(settings.accent, customHex: settings.accentCustomHex)
         recordingRecovery.enabled = settings.keepRecordingRecovery
         speech.onFinalization = { [weak self] milliseconds in Task { await self?.record(UsageEvent(action: "speech_finalize", durationMS: milliseconds)) } }
         voice.onFinalization = { [weak self] milliseconds in Task { await self?.record(UsageEvent(action: "speech_finalize", durationMS: milliseconds)) } }
@@ -264,7 +276,7 @@ final class AppModel {
             guard let self else { return }
             if let id = manualRecoveryCaptureID { recordingRecovery.update(id: id, text: text) }
             guard captureMode == .dictation, LocalSpeechModel.supports(locale: settings.speechLocale) else { return }
-            let words = TextProcessing.applyingVocabulary(to: text, entries: effectiveVocabulary, project: captureProject)
+            let words = TextProcessing.applyingVocabulary(to: text, entries: effectiveVocabulary, project: captureProject, isKnownWord: KnownWords.contains)
             cleanup.update(words, captureID: captureGeneration, formatted: DictationCleanupText.isFormatted(text))
         }
         speech.onRecordingSound = { [weak self] cue in self?.playRecordingSound(cue) }
@@ -298,11 +310,13 @@ final class AppModel {
                     voiceFinishedAt = nil
                 }
             }
+            agentAnswerCaptureChanged()
             resumeQueuedVoiceCaptureIfReady()
             onActivityChanged?()
         }
         voice.onCommand = { [weak self] text in
             guard let self else { return }
+            if voiceInputKind == .agentAnswer { completeAgentAnswer(text); return }
             voiceResultIsBeingHandled = true
             defer {
                 voiceResultIsBeingHandled = false
@@ -313,6 +327,13 @@ final class AppModel {
         }
         voice.onIncomplete = { [weak self] completion in
             guard let self else { return }
+            if voiceInputKind == .agentAnswer {
+                // Unreliable words must never reach an agent as if they were certain.
+                agentAsk.answerTargetGone = agentAsk.answerTargetGone || !completion.wasExplicitlyStopped || completion.reason == .unreconciledFinal
+                voice.acknowledgeIncompleteDictation()
+                completeAgentAnswer(completion.text)
+                return
+            }
             voiceResultIsBeingHandled = true
             defer {
                 voiceResultIsBeingHandled = false
@@ -338,6 +359,8 @@ final class AppModel {
         }
     }
 
+    var agentAskSocketURL: URL { AgentAskServer.socketURL(dataDirectory: dataDirectory) }
+
     static var defaultDataDirectory: URL {
         if let override = ProcessInfo.processInfo.environment["UIUI_DATA_DIR"] { return URL(fileURLWithPath: override, isDirectory: true) }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("uiui", isDirectory: true)
@@ -354,9 +377,14 @@ final class AppModel {
         } catch { errorMessage = "uiui couldn't open its local library. \(error.localizedDescription)" }
     }
 
+    /// Plays the start cue from Settings so a sound can be heard before choosing it.
+    func previewRecordingSound() {
+        recordingSounds.play(.ready, pack: settings.soundPack, volume: settings.soundVolume)
+    }
+
     private func playRecordingSound(_ cue: RecordingSound) {
         guard systemServicesEnabled else { return }
-        if settings.soundFeedbackEnabled { recordingSounds.play(cue) }
+        if settings.soundFeedbackEnabled { recordingSounds.play(cue, pack: settings.soundPack, volume: settings.soundVolume) }
         if settings.trackpadFeedbackEnabled { recordingSounds.tap(cue) }
     }
 
@@ -468,7 +496,7 @@ final class AppModel {
         statusMessage = completion.text.isEmpty ? "No speech detected · microphone off" : "Your partial words are kept here."
     }
     private func receiveTranscript(_ text: String) {
-        let normalized = TextProcessing.applyingVocabulary(to: text, entries: effectiveVocabulary, project: captureProject)
+        let normalized = TextProcessing.applyingVocabulary(to: text, entries: effectiveVocabulary, project: captureProject, isKnownWord: KnownWords.contains)
         guard !normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { preserveManualRecordingRecovery(); statusMessage = "No speech detected. Your draft is unchanged."; onActivityChanged?(); return }
         captureText = captureText.isEmpty ? normalized : captureText + "\n" + normalized
         completionRawFormatted = DictationCleanupText.isFormatted(text)

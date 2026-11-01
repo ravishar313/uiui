@@ -53,8 +53,7 @@ final class NotchSignalPolicyTests: XCTestCase {
     }
 
     func testTimerAppearsOnlyAfterThirtySeconds() {
-        XCTAssertFalse(NotchTimerPolicy.isVisible(elapsed: 29.9))
-        XCTAssertTrue(NotchTimerPolicy.isVisible(elapsed: 30))
+        XCTAssertTrue(NotchTimerPolicy.isVisible(elapsed: 0))
         XCTAssertEqual(NotchTimerPolicy.text(72), "1:12")
         XCTAssertEqual(NotchTimerPolicy.text(5), "0:05")
     }
@@ -121,6 +120,25 @@ final class NotchPlacementTests: XCTestCase {
         XCTAssertEqual(placement.screenIndex, 1)
         XCTAssertEqual(placement.shape, .floatingPill)
         XCTAssertNil(NotchPlacement.decide(screens: []))
+    }
+
+    func testInUseFollowsKeyboardFocusToTheExternalDisplay() throws {
+        var laptop = notched; laptop.isMain = false; laptop.id = 1
+        var monitor = external; monitor.isMain = true; monitor.id = 2
+        let resting = try XCTUnwrap(NotchPlacement.decide(screens: [laptop, monitor]))
+        XCTAssertEqual(resting.screenIndex, 0, "At rest the notch stays on the camera display")
+        let active = try XCTUnwrap(NotchPlacement.decide(screens: [laptop, monitor], inUse: true))
+        XCTAssertEqual(active.screenIndex, 1)
+        XCTAssertEqual(active.shape, .floatingPill)
+    }
+
+    func testInUseStaysOnTheHeldDisplayWhenFocusMoves() throws {
+        var laptop = notched; laptop.isMain = true; laptop.id = 1
+        var monitor = external; monitor.isMain = false; monitor.id = 2
+        let held = try XCTUnwrap(NotchPlacement.decide(screens: [laptop, monitor], inUse: true, heldDisplay: 2))
+        XCTAssertEqual(held.screenIndex, 1)
+        let unplugged = try XCTUnwrap(NotchPlacement.decide(screens: [laptop], inUse: true, heldDisplay: 2))
+        XCTAssertEqual(unplugged.screenIndex, 0, "A disconnected held display falls back to focus")
     }
 
     func testPillNeverCarriesACameraAndMatchesLayout() {

@@ -100,13 +100,14 @@ struct NotchView: View {
             else {
                 Button(action: onExpand) {
                     HStack(spacing: 0) {
+                        // Centred in the wing: the compact notch has no room for a side margin.
                         NotchPresenceMark(phase: phase, level: level).opacity(stylePaintsHeader ? 0 : 1)
-                            .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 8)
+                            .frame(maxWidth: .infinity)
                         Color.clear.frame(width: cameraWidth, height: 1)
                         NotchGlanceContext(phase: phase, level: level, queued: model.queuedVoiceCaptureKind != nil)
                             .opacity(stylePaintsHeader ? 0 : 1)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 8)
-                    }.padding(.horizontal, 6).frame(maxWidth: .infinity).frame(height: cameraHeader).contentShape(Rectangle())
+                            .frame(maxWidth: .infinity)
+                    }.frame(maxWidth: .infinity).frame(height: cameraHeader).contentShape(Rectangle())
                 }.buttonStyle(.plain).help(statusLabel)
                     .accessibilityLabel(statusLabel + ". Open uiui.")
             }
@@ -178,7 +179,6 @@ struct NotchView: View {
     /// Width held back at the right of the line for the badge and timer.
     private var trailingReserve: CGFloat {
         var width: CGFloat = 0
-        if timerVisible { width += 34 }
         if let badge = statusBadge, !transcript.isEmpty { width += CGFloat(badge.text.count) * 5.4 + 12 }
         return width
     }
@@ -195,7 +195,7 @@ struct NotchView: View {
                             .opacity(isHovering ? 1 : 0).allowsHitTesting(isHovering)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 8)
+                .frame(maxWidth: .infinity) // Centred in the wing at every notch size.
                 Color.clear.frame(width: cameraWidth, height: 1)
                 if isIdle {
                     // The notch panel never takes focus, so the app you were typing
@@ -203,16 +203,22 @@ struct NotchView: View {
                     HStack(spacing: 4) {
                         Button { model.beginVoiceCapture() } label: {
                             Image(systemName: "mic.fill").font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(UIUIStyle.lime.opacity(isHovering ? 1 : 0.75))
+                                .foregroundStyle(UIUIStyle.accent.opacity(isHovering ? 1 : 0.75))
                                 .frame(width: 26, height: 26).contentShape(Rectangle())
                         }.buttonStyle(.plain).help("Start dictation").accessibilityLabel("Start dictation")
                         hudButton("chevron.up", label: "Collapse uiui", action: onCollapse)
                             .opacity(isHovering ? 1 : 0).allowsHitTesting(isHovering)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 8)
+                    }.frame(maxWidth: .infinity)
                 } else {
                 ZStack {
-                    NotchGlanceContext(phase: phase, level: level, queued: model.queuedVoiceCaptureKind != nil)
-                        .opacity(isHovering || stylePaintsHeader ? 0 : 1)
+                    // While recording the words show that you are speaking, so this
+                    // wing keeps the time. Eyes and Voice bars paint this wing themselves.
+                    if phase == .recording, !(model.queuedVoiceCaptureKind != nil) {
+                        timerView.opacity(isHovering || stylePaintsHeader ? 0 : 1)
+                    } else {
+                        NotchGlanceContext(phase: phase, level: level, queued: model.queuedVoiceCaptureKind != nil)
+                            .opacity(isHovering || stylePaintsHeader ? 0 : 1)
+                    }
                     HStack(spacing: 2) {
                         if model.hasCancellableVoiceInput || preview?.hovering == true {
                             hudButton("xmark", label: "Cancel recording") { model.cancelVoiceInputFromEscape() }
@@ -225,8 +231,8 @@ struct NotchView: View {
                     }
                     .opacity(isHovering ? 1 : 0)
                     .allowsHitTesting(isHovering)
-                }.frame(width: 26, height: 26)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 8)
+                }.frame(minWidth: 26, minHeight: 26)
+                    .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal, 14)
@@ -245,15 +251,14 @@ struct NotchView: View {
         if offersUndo {
             sentRow
         } else if transcriptOpen {
-            HoverTranscript(text: transcript, fontSize: fontSize, colorize: style == .words,
+            HoverTranscript(text: transcript, fontSize: fontSize,
                             badge: statusBadge, timer: timerView, staticLayout: preview != nil)
         } else {
             ZStack(alignment: .leading) {
                 // Keep the viewport mounted through fast recognition/cleanup
                 // changes, fading the words instead of removing a whole row.
                 RollingTranscriptLine(text: transcript, isError: false, accent: .white,
-                                      fontSize: fontSize + (style == .words ? 1 : 0), rowHeight: rowHeight,
-                                      colorize: style == .words)
+                                      fontSize: fontSize + (style == .words ? 1 : 0), rowHeight: rowHeight)
                     .padding(.trailing, trailingReserve)
                     .opacity(rowOpacity)
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: phase)
@@ -263,14 +268,10 @@ struct NotchView: View {
                         .lineLimit(1).frame(maxWidth: .infinity, alignment: .center)
                         .accessibilityLabel(badge.text)
                 }
-                if phase == .recording, !transcript.isEmpty || statusBadge == nil || timerVisible {
-                    HStack(spacing: 6) {
-                        if !transcript.isEmpty, let badge = statusBadge {
-                            Text(badge.text).font(.system(size: fontSize - 1, weight: .medium)).foregroundStyle(badge.color)
-                                .lineLimit(1).accessibilityLabel(badge.text)
-                        }
-                        timerView
-                    }.frame(maxWidth: .infinity, alignment: .trailing)
+                if phase == .recording, !transcript.isEmpty, let badge = statusBadge {
+                    Text(badge.text).font(.system(size: fontSize - 1, weight: .medium)).foregroundStyle(badge.color)
+                        .lineLimit(1).accessibilityLabel(badge.text)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 if model.showsSpeechDownload { NotchDownloadBar(fraction: model.speechPreparationFraction) }
                 if phase == .copied || phase == .needsInput {
@@ -287,13 +288,13 @@ struct NotchView: View {
     @ViewBuilder private var timerView: some View {
         if timerVisible {
             if let text = preview?.timer {
-                Text(text).font(.system(size: fontSize - 2, weight: .medium)).monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.5)).accessibilityLabel("Recording time " + text)
+                Text(text).font(.system(size: 11, weight: .medium)).monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.7)).accessibilityLabel("Recording time " + text)
             } else {
                 Text(timerInterval: extras.timerReference...extras.timerReference.addingTimeInterval(86_400),
                      pauseTime: extras.timerPausedAt, countsDown: false)
-                    .font(.system(size: fontSize - 2, weight: .medium)).monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.5)).lineLimit(1).fixedSize()
+                    .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.7)).lineLimit(1).fixedSize()
                     .accessibilityLabel("Recording time")
             }
         }
@@ -303,7 +304,7 @@ struct NotchView: View {
     private var sentRow: some View {
         HStack(spacing: 6) {
             Image(systemName: "checkmark").font(.system(size: fontSize - 2, weight: .semibold))
-                .foregroundStyle(UIUIStyle.lime).accessibilityHidden(true)
+                .foregroundStyle(UIUIStyle.accent).accessibilityHidden(true)
             Text(sentApp.map { "Sent to \($0)" } ?? "Sent").font(.system(size: fontSize, weight: .medium))
                 .foregroundStyle(.white.opacity(0.82)).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 4)
@@ -346,7 +347,6 @@ struct NotchView: View {
 private struct HoverTranscript<Timer: View>: View {
     let text: String
     let fontSize: CGFloat
-    let colorize: Bool
     let badge: (text: String, color: Color)?
     let timer: Timer
     /// ImageRenderer cannot draw a ScrollView, so previews lay the same text out bottom-aligned.
@@ -357,7 +357,7 @@ private struct HoverTranscript<Timer: View>: View {
     var body: some View {
         VStack(spacing: 2) {
             if staticLayout {
-                Group { if colorize { Text(NotchWordsText.attributed(text)) } else { Text(text).foregroundStyle(.white.opacity(0.9)) } }
+                Text(NotchWordsText.attributed(text))
                     .font(.system(size: fontSize)).lineSpacing(2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).clipped()
             } else {
@@ -367,10 +367,8 @@ private struct HoverTranscript<Timer: View>: View {
                         Group {
                             if text.isEmpty {
                                 Text(badge?.text ?? "Listening").foregroundStyle(badge?.color ?? .white.opacity(0.5))
-                            } else if colorize {
-                                Text(NotchWordsText.attributed(text))
                             } else {
-                                Text(text).foregroundStyle(.white.opacity(0.9))
+                                Text(NotchWordsText.attributed(text))
                             }
                         }
                         .font(.system(size: fontSize)).lineSpacing(2)
@@ -481,10 +479,11 @@ enum NotchWordsText {
     }
 
     static func blend(_ recency: Double) -> Color {
-        let lime = (r: 0.79, g: 0.94, b: 0.40)
+        // Only ever called while a view draws, on the main thread.
+        let accent = MainActor.assumeIsolated { UIUIStyle.accentStore.rgb }
         let t = min(1, max(0, recency))
         let base = 0.86 - 0.0 // older words are a quiet white
-        return Color(red: base + (lime.r - base) * t, green: base + (lime.g - base) * t, blue: base + (lime.b - base) * t)
+        return Color(red: base + (accent.red - base) * t, green: base + (accent.green - base) * t, blue: base + (accent.blue - base) * t)
     }
 }
 
@@ -503,7 +502,7 @@ private struct NotchPresenceMark: View {
         }
     }
     var body: some View {
-        UIUIMark(size: 26, dark: true, accent: UIUIStyle.lime)
+        UIUIMark(size: 26, dark: true, accent: UIUIStyle.accent, highlight: false)
             .opacity(phase == .idle ? 0.52 : phase == .cancelled ? 0.24 : 1)
             .scaleEffect(x: 1, y: heightScale)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: level)
@@ -531,19 +530,19 @@ private struct NotchGlanceContext: View {
     }
     private var mark: some View {
         Group {
-            if queued || phase == .queued { Image(systemName: "rectangle.stack").foregroundStyle(UIUIStyle.lime) }
+            if queued || phase == .queued { Image(systemName: "rectangle.stack").foregroundStyle(UIUIStyle.accent) }
             else if phase == .recording {
                 HStack(spacing: 2) {
                     ForEach(0..<5) { index in
                         RoundedRectangle(cornerRadius: 1)
-                            .fill(UIUIStyle.lime.opacity(0.8))
+                            .fill(UIUIStyle.accent.opacity(0.8))
                             .frame(width: 1.5, height: CGFloat(3 + 13 * level * [0.4, 0.8, 1.0, 0.7, 0.5][index]))
                     }
                 }.animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: level)
             } else if phase == .copied { Image(systemName: "square.on.square").foregroundStyle(.orange) }
             else if phase == .needsInput { Image(systemName: "exclamationmark.circle").foregroundStyle(.orange) }
-            else if phase == .success { Image(systemName: "checkmark").foregroundStyle(UIUIStyle.lime) }
-            else if phase == .processing { Image(systemName: "ellipsis").foregroundStyle(UIUIStyle.lime.opacity(0.7)) }
+            else if phase == .success { Image(systemName: "checkmark").foregroundStyle(UIUIStyle.accent) }
+            else if phase == .processing { Image(systemName: "ellipsis").foregroundStyle(UIUIStyle.accent.opacity(0.7)) }
             else { Color.clear }
         }
     }
@@ -561,8 +560,6 @@ private struct RollingTranscriptLine: View {
     let accent: Color
     var fontSize: CGFloat = 12
     var rowHeight: CGFloat = 18
-    /// Words first: newest words in the accent colour, fading to white.
-    var colorize = false
     @Environment(\.notchReduceMotion) private var reduceMotion
     @State private var measuredWidth: CGFloat = 0
     private var singleLine: String { NotchWordsText.rollingTail(of: text) }
@@ -571,7 +568,7 @@ private struct RollingTranscriptLine: View {
         GeometryReader { geometry in
             let overflow = max(0, measuredWidth - geometry.size.width)
             Group {
-                if colorize && !isError { Text(NotchWordsText.attributed(singleLine)) } else { Text(singleLine) }
+                if !isError { Text(NotchWordsText.attributed(singleLine)) } else { Text(singleLine) }
             }
                 .font(.system(size: isError ? fontSize - 2 : fontSize))
                 .foregroundStyle(isError ? Color.orange.opacity(0.9) : accent.opacity(0.9))
@@ -582,7 +579,7 @@ private struct RollingTranscriptLine: View {
                     }
                 }
                 .offset(x: -overflow)
-                .animation(reduceMotion ? nil : .easeOut(duration: colorize ? 0.22 : 0.12), value: overflow)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: overflow)
                 .frame(width: geometry.size.width, height: rowHeight, alignment: .leading)
                 .clipped()
                 .mask {
@@ -610,7 +607,7 @@ private struct NotchDownloadBar: View {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.14))
-                    Capsule().fill(UIUIStyle.lime)
+                    Capsule().fill(UIUIStyle.accent)
                         .frame(width: max(6, geometry.size.width * min(1, max(0, fraction ?? 0))))
                         .opacity(fraction == nil ? 0 : 1)
                         .animation(.easeOut(duration: 0.2), value: fraction)

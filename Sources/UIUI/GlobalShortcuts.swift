@@ -8,7 +8,7 @@ import UIUICore
 /// registered system hot key: macOS delivers only that combination's press and
 /// release, which works without Accessibility. For key or mouse chords, reads only
 /// their event type and scroll phases to cancel a chord. During active
-/// capture only, a separate active event tap consumes Escape and its matching release. No characters or key
+/// capture only, a separate active event tap consumes Escape, plain Backspace and their matching releases. No characters or key
 /// history are read or retained. All other events retain their normal behavior.
 @MainActor
 final class GlobalShortcuts {
@@ -16,6 +16,7 @@ final class GlobalShortcuts {
     var onVoiceReleased: (() -> Void)?
     var onVoiceCancelled: (() -> Void)?
     var onEscape: (() -> Void)?
+    var onBackspace: (() -> Void)?
     var onStatusChanged: ((String) -> Void)?
     private(set) var registered = false
     private(set) var status = "Voice key is off."
@@ -32,6 +33,8 @@ final class GlobalShortcuts {
     private let globalAccessCheck: () -> Bool
     private let createEscapeTap: (CGEventMask, CGEventTapCallBack, UnsafeMutableRawPointer) -> CFMachPort?
     private(set) var escapeCancellationEnabled = false
+    /// Backspace edits the live transcript only while the microphone is listening.
+    private var backspaceEditingEnabled = false
     private let observesSystemEvents: Bool
     private var activationObserver: NSObjectProtocol?
     private var deactivationObserver: NSObjectProtocol?
@@ -97,6 +100,7 @@ final class GlobalShortcuts {
 
     func remove() {
         setEscapeCancellationEnabled(false)
+        setBackspaceEditingEnabled(false)
         enabled = false
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
@@ -162,7 +166,13 @@ final class GlobalShortcuts {
         refreshEscapeMonitor()
     }
 
-    private var needsEscapeEvents: Bool { escapeCancellationEnabled || suppressEscapeUntilKeyUp }
+    func setBackspaceEditingEnabled(_ value: Bool) {
+        guard backspaceEditingEnabled != value else { return }
+        backspaceEditingEnabled = value
+        refreshEscapeMonitor()
+    }
+
+    private var needsEscapeEvents: Bool { escapeCancellationEnabled || backspaceEditingEnabled || suppressEscapeUntilKeyUp }
 
     private func refreshEscapeMonitor() {
         guard observesSystemEvents else { return }
@@ -236,17 +246,24 @@ final class GlobalShortcuts {
         guard needsEscapeEvents, type == .keyDown || type == .keyUp else {
             return Unmanaged.passUnretained(event)
         }
+        let shortcut = !event.flags.intersection([.maskCommand, .maskControl]).isEmpty
         return consumeEscape(keyCode: event.getIntegerValueField(.keyboardEventKeycode),
-                             isKeyDown: type == .keyDown) ? nil : Unmanaged.passUnretained(event)
+                             isKeyDown: type == .keyDown, isShortcut: shortcut) ? nil : Unmanaged.passUnretained(event)
     }
 
     @discardableResult
     func handleEscape(_ event: NSEvent) -> Bool {
         guard needsEscapeEvents, event.type == .keyDown || event.type == .keyUp else { return false }
-        return consumeEscape(keyCode: Int64(event.keyCode), isKeyDown: event.type == .keyDown)
+        return consumeEscape(keyCode: Int64(event.keyCode), isKeyDown: event.type == .keyDown,
+                             isShortcut: !event.modifierFlags.intersection([.command, .control]).isEmpty)
     }
 
-    private func consumeEscape(keyCode: Int64, isKeyDown: Bool) -> Bool {
+    private func consumeEscape(keyCode: Int64, isKeyDown: Bool, isShortcut: Bool = false) -> Bool {
+        if keyCode == 51 { // Only equality with Backspace is checked; no other key is identified.
+            guard backspaceEditingEnabled, !isShortcut else { return false }
+            if isKeyDown { onBackspace?() }
+            return true
+        }
         guard keyCode == 53 else { return false }
         if suppressEscapeUntilKeyUp {
             if !isKeyDown {

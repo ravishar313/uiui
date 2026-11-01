@@ -30,7 +30,7 @@ struct QuickCaptureView: View {
             ModelStatusView(model: model)
         }.padding(22).frame(minWidth: 470, minHeight: 310)
             .background(UIUIStyle.paper(scheme))
-            .tint(scheme == .dark ? UIUIStyle.lime : Color(red: 0.3, green: 0.42, blue: 0.12))
+            .tint(UIUIStyle.tint(scheme))
             .onAppear { focused = true }
     }
 }

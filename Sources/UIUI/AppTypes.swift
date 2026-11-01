@@ -108,6 +108,12 @@ struct UIUISettings: Codable {
     var soundFeedbackEnabled = true
     /// Optional trackpad tap on start, stop and cancel. Off unless the user turns it on.
     var trackpadFeedbackEnabled = false
+    var soundPack: SoundPack = .soft
+    /// 0 to 1, relative to each pack's normal level.
+    var soundVolume = 1.0
+    var accent: UIUIAccent = .lime
+    /// RRGGBB, used when `accent` is custom.
+    var accentCustomHex = ""
     var aiEnabled = true
     var speechLocale = "en-IN"
     var saveDictationHistory = true
@@ -119,11 +125,15 @@ struct UIUISettings: Codable {
     /// The setup guide finished or was dismissed. Missing in older settings, so
     /// existing installs see the guide once to grant anything still missing.
     var onboardingCompleted = false
+    /// Lets agents on this Mac ask questions through `uiui ask`. Off until turned on.
+    var agentAskEnabled = false
+    /// The answer key's one-time hint has done its job.
+    var agentAnswerKeyLearned = false
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case notchEnabled, notchVisualStyle, notchSize, voiceTriggerEnabled, voiceTriggerKey, voiceTriggerMode, openOnHover, quietMode, soundFeedbackEnabled, trackpadFeedbackEnabled, aiEnabled, speechLocale, saveDictationHistory, keepRecordingRecovery, launchAtLogin, vocabulary, vocabularyScope, customProjects, onboardingCompleted
+        case notchEnabled, notchVisualStyle, notchSize, voiceTriggerEnabled, voiceTriggerKey, voiceTriggerMode, openOnHover, quietMode, soundFeedbackEnabled, trackpadFeedbackEnabled, soundPack, soundVolume, accent, accentCustomHex, aiEnabled, speechLocale, saveDictationHistory, keepRecordingRecovery, launchAtLogin, vocabulary, vocabularyScope, customProjects, onboardingCompleted, agentAskEnabled, agentAnswerKeyLearned
     }
 
     init(from decoder: Decoder) throws {
@@ -143,10 +153,16 @@ struct UIUISettings: Codable {
         quietMode = try values.decodeIfPresent(Bool.self, forKey: .quietMode) ?? false
         soundFeedbackEnabled = try values.decodeIfPresent(Bool.self, forKey: .soundFeedbackEnabled) ?? true
         trackpadFeedbackEnabled = try values.decodeIfPresent(Bool.self, forKey: .trackpadFeedbackEnabled) ?? false
+        soundPack = (try? values.decodeIfPresent(SoundPack.self, forKey: .soundPack)) ?? .soft
+        soundVolume = min(1, max(0, (try? values.decodeIfPresent(Double.self, forKey: .soundVolume)) ?? 1))
+        accent = (try? values.decodeIfPresent(UIUIAccent.self, forKey: .accent)) ?? .lime
+        accentCustomHex = (try? values.decodeIfPresent(String.self, forKey: .accentCustomHex)) ?? ""
         aiEnabled = try values.decodeIfPresent(Bool.self, forKey: .aiEnabled) ?? true
         speechLocale = try values.decodeIfPresent(String.self, forKey: .speechLocale) ?? "en-IN"
         saveDictationHistory = try values.decodeIfPresent(Bool.self, forKey: .saveDictationHistory) ?? true
         keepRecordingRecovery = try values.decodeIfPresent(Bool.self, forKey: .keepRecordingRecovery) ?? true
+        agentAskEnabled = try values.decodeIfPresent(Bool.self, forKey: .agentAskEnabled) ?? false
+        agentAnswerKeyLearned = try values.decodeIfPresent(Bool.self, forKey: .agentAnswerKeyLearned) ?? false
         launchAtLogin = try values.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         vocabulary = try values.decodeIfPresent([VocabularyEntry].self, forKey: .vocabulary) ?? []
         vocabularyScope = try values.decodeIfPresent(String.self, forKey: .vocabularyScope) ?? "Personal"

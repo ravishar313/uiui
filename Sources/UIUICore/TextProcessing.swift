@@ -20,7 +20,10 @@ public enum TextProcessing {
     }
 
     /// Replacements are selected from the original text, so replacement output is never reprocessed.
-    public static func applyingVocabulary(to text: String, entries: [VocabularyEntry], project: String) -> String {
+    /// With `isKnownWord`, words that sound like a dictionary spelling are also corrected; that
+    /// check protects real words, so without it only exact matches change.
+    public static func applyingVocabulary(to text: String, entries: [VocabularyEntry], project: String,
+                                          isKnownWord: ((String) -> Bool)? = nil) -> String {
         let candidates = entries.enumerated().filter {
             !$0.element.heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             ($0.element.project == "All projects" || $0.element.project == project)
@@ -39,6 +42,12 @@ public enum TextProcessing {
                 if !replacements.contains(where: { NSIntersectionRange($0.range, match.range).length > 0 }) {
                     replacements.append(Replacement(range: match.range, value: candidate.element.replacement))
                 }
+            }
+        }
+        if let isKnownWord {
+            let spellings = candidates.map(\.element)
+            for match in SoundsLikeVocabulary.matches(in: text, entries: spellings, skipping: replacements.map(\.range), isKnownWord: isKnownWord) {
+                replacements.append(Replacement(range: match.range, value: match.replacement))
             }
         }
         let result = NSMutableString(string: text)

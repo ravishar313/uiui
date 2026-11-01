@@ -6,7 +6,7 @@ struct NotchStylePicker: View {
     @Binding var selection: NotchVisualStyle
     @Environment(\.colorScheme) private var scheme
     private var selectionTint: Color {
-        scheme == .dark ? UIUIStyle.lime : Color(red: 0.3, green: 0.42, blue: 0.12)
+        UIUIStyle.tint(scheme)
     }
 
     var body: some View {

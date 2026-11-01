@@ -321,7 +321,7 @@ struct NotchVisualFeedback: View {
         let size = geometry.bounds.size
         let intensity = min(envelope, NotchMosaicMetrics.intensity(phase: phase, progress: progress))
         let tint = phase == .copied || phase == .needsInput
-            ? Color(red: 0.97, green: 0.67, blue: 0.26) : UIUIStyle.lime
+            ? Color(red: 0.97, green: 0.67, blue: 0.26) : UIUIStyle.accent
         if intensity > 0.0001 && style == .mosaic {
             var paths = Array(repeating: Path(), count: NotchMosaicMetrics.opacitySteps)
             for row in 0..<geometry.rows {

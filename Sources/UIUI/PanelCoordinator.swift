@@ -79,6 +79,9 @@ final class PanelCoordinator {
     private let pauseHotKey = PauseHotKey()
     private let ownsSystemHooks: Bool
     private var feedbackID: UUID?
+    /// The display the notch stays on while in use, so it never moves mid-capture.
+    private var heldDisplay: UInt32?
+    private var askWasVisible = false
     private lazy var feedbackLifetime = NotchFeedbackLifetime { [weak self] id, clearReceipt in
         guard let self, model.activeVoiceFeedback?.id == id,
               !keepsVoiceHUDVisible else { return false }
@@ -168,16 +171,19 @@ final class PanelCoordinator {
         if let screen { capture?.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 280, y: screen.visibleFrame.midY - 210)) }
         capture?.makeKeyAndOrderFront(nil)
     }
-    func updateNotch() {
-        guard model.settings.notchEnabled else { collapseTask?.cancel(); model.notchExpanded = false; model.notchMounted = false; notch?.orderOut(nil); return }
-        guard let (screen, placement) = notchScreen else { return }
+    func updateNotch(opening: Bool = false) {
+        guard model.settings.notchEnabled else { collapseTask?.cancel(); model.notchExpanded = false; model.notchMounted = false; heldDisplay = nil; notch?.orderOut(nil); return }
+        let inUse = opening || model.notchExpanded || model.notchMounted || keepsVoiceHUDVisible
+        if !inUse { heldDisplay = nil }
+        guard let (screen, placement) = notchScreen(inUse: inUse) else { return }
+        if inUse { heldDisplay = Self.displayID(screen) }
         model.notchHasCamera = placement.shape == .cameraNotch
         if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea { model.notchCameraWidth = max(160, right.minX - left.maxX) }
         else { model.notchCameraWidth = 180 }
         model.notchCameraHeight = model.notchHasCamera ? max(32, screen.safeAreaInsets.top) : 0
         if notch == nil {
             let panel = makePanel(acceptsKeyboardFocus: false); panel.level = .statusBar; panel.hasShadow = false
-            panel.contentView = NSHostingView(rootView: NotchStage(model: model, onExpand: { [weak self] in self?.expand() }, onCollapse: { [weak self] in self?.collapse() },
+            panel.contentView = NSHostingView(rootView: NotchStage(model: model, onExpand: { [weak self] in self?.expand(inPlace: true) }, onCollapse: { [weak self] in self?.collapse() },
                                                                 onPointerEnter: { [weak self] in self?.pointerEnteredNotch() },
                                                                 onPointerExit: { [weak self] in self?.pointerLeftNotch() },
                                                                 onLayoutChange: { [weak self] in
@@ -187,13 +193,18 @@ final class PanelCoordinator {
             notch = panel
         }
         setNotchFrame(expanded: model.notchExpanded || model.notchMounted)
-        if notch?.isVisible == false { notch?.orderFrontRegardless() }
+        // At rest a pill would be a black shape with nothing to say. The camera
+        // notch stays because it blends into the hardware and answers the pointer.
+        if placement.shape == .floatingPill, !inUse { notch?.orderOut(nil) }
+        else if notch?.isVisible == false { notch?.orderFrontRegardless() }
     }
-    func expand() {
+    /// `inPlace` opens where the person pointed rather than where keyboard focus is.
+    func expand(inPlace: Bool = false) {
         guard model.settings.notchEnabled else { return }
         guard !model.notchExpanded else { return }
         transitionID = UUID(); collapseTask?.cancel(); collapseTask = nil
-        updateNotch()
+        if inPlace, let screen = notch?.screen { heldDisplay = Self.displayID(screen) }
+        updateNotch(opening: true)
         // Resize the transparent host first while the mask remains collapsed. The visible
         // shape stays at the same global top-center; no window-frame interpolation occurs.
         setNotchFrame(expanded: true)
@@ -225,7 +236,7 @@ final class PanelCoordinator {
             do { try await Task.sleep(for: delay) } catch { return }
             guard let self, transitionID == token, !model.notchExpanded else { return }
             model.notchMounted = false
-            setNotchFrame(expanded: false)
+            updateNotch()
         }
     }
     func activityChanged() {
@@ -246,6 +257,9 @@ final class PanelCoordinator {
         } else if model.notchVoiceFeedback == nil {
             feedbackID = nil
         }
+        let askVisible = model.askPresentation != nil
+        if askWasVisible, !askVisible, !keepsVoiceHUDVisible { collapse() }
+        askWasVisible = askVisible
         feedbackLifetime.update(feedback: model.notchVoiceFeedback, busy: keepsVoiceHUDVisible)
         // Control-Option-P exists only while a capture can be paused.
         if ownsSystemHooks { pauseHotKey.setEnabled(model.canPauseVoiceCapture) }
@@ -257,7 +271,7 @@ final class PanelCoordinator {
         updateNotch()
     }
     private var keepsVoiceHUDVisible: Bool {
-        model.notchStylePreviewActive || model.speechDownloadActive || model.voiceIsRecording || model.isRecording || model.manualVoiceIsPreparing
+        model.askPresentation != nil || model.notchStylePreviewActive || model.speechDownloadActive || model.voiceIsRecording || model.isRecording || model.manualVoiceIsPreparing
             || model.manualVoiceIsFinishing || model.manualCleanupInProgress
             || model.queuedVoiceCaptureKind != nil || model.voice.state == "finishing"
             || model.voice.state == "working" || model.activeVoiceFeedback?.state == .working
@@ -282,27 +296,35 @@ final class PanelCoordinator {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         notch?.close(); capture?.close(); workspace.window?.close()
     }
-    /// Notch-bearing display first, otherwise the main display, where the notch
-    /// becomes a floating pill. The geometry decision itself is pure (NotchPlacement).
-    private var notchScreen: (NSScreen, NotchPlacement)? {
+    /// The geometry decision itself is pure (NotchPlacement).
+    private func notchScreen(inUse: Bool) -> (NSScreen, NotchPlacement)? {
         let screens = NSScreen.screens
         let main = NSScreen.main
         let described = screens.map { screen in
             NotchPlacement.Screen(frame: screen.frame, visibleFrame: screen.visibleFrame,
-                                  safeAreaTop: screen.safeAreaInsets.top, isMain: screen == main)
+                                  safeAreaTop: screen.safeAreaInsets.top, isMain: screen == main,
+                                  id: Self.displayID(screen) ?? 0)
         }
-        guard let placement = NotchPlacement.decide(screens: described) else { return nil }
+        guard let placement = NotchPlacement.decide(screens: described, inUse: inUse, heldDisplay: heldDisplay) else { return nil }
         return (screens[placement.screenIndex], placement)
     }
+    private static func displayID(_ screen: NSScreen) -> UInt32? {
+        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32
+    }
     private func setNotchFrame(expanded: Bool) {
-        guard let (_, placement) = notchScreen else { return }
+        guard let (_, placement) = notchScreen(inUse: heldDisplay != nil) else { return }
         let size = model.settings.notchSize
         let closed = NotchLayout.closedSize(cameraWidth: model.notchCameraWidth, cameraHeight: model.notchCameraHeight, hasCamera: model.notchHasCamera, size: size)
         let width: CGFloat = expanded ? NotchLayout.expandedWidth(cameraWidth: model.notchCameraWidth, hasCamera: model.notchHasCamera, size: size) : closed.width
         let height: CGFloat = expanded
             ? NotchLayout.expandedHeight(cameraHeight: model.notchCameraHeight, size: size, transcriptOpen: model.notchExtras.transcriptOpen)
             : closed.height
-        let frame = placement.frame(size: CGSize(width: width, height: height))
+        var frameSize = CGSize(width: width, height: height)
+        if expanded, let ask = model.askPresentation {
+            frameSize = NotchLayout.askSize(ask, cameraWidth: model.notchCameraWidth, cameraHeight: model.notchCameraHeight,
+                                            hasCamera: model.notchHasCamera, size: size)
+        }
+        let frame = placement.frame(size: frameSize)
         if notch?.frame != frame { notch?.setFrame(frame, display: true) }
     }
     private func makePanel(acceptsKeyboardFocus: Bool = true) -> CompanionPanel {

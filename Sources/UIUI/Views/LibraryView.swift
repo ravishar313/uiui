@@ -14,13 +14,17 @@ struct LibraryView: View {
                 Spacer()
                 QuietIconButton(symbol: "slider.horizontal.3", label: "Settings") { model.openSettings() }
             }.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 13)
-            VoiceHomeView(model: model).padding(.horizontal, 20).padding(.bottom, 14)
-            RecordingRecoveryView(model: model)
-            Divider().opacity(0.5)
             if let item = model.selectedItem {
+                VoiceHomeView(model: model, showsUsage: false).padding(.horizontal, 20).padding(.bottom, 14)
+                RecordingRecoveryView(model: model)
+                Divider().opacity(0.5)
                 SavedTextView(model: model, item: item).id(item.id)
             } else {
-                HistoryListView(model: model)
+                HistoryListView(model: model, top: AnyView(VStack(spacing: 0) {
+                    VoiceHomeView(model: model).padding(.horizontal, 20).padding(.bottom, 14)
+                    RecordingRecoveryView(model: model)
+                    Divider().opacity(0.5)
+                }))
             }
             if let error = model.errorMessage, !error.isEmpty, error != model.voiceError {
                 Label(error, systemImage: "exclamationmark.circle")
@@ -35,7 +39,7 @@ struct LibraryView: View {
         }
         .background(UIUIStyle.paper(scheme))
         .frame(minWidth: 680, minHeight: 460)
-        .tint(scheme == .dark ? UIUIStyle.lime : Color(red: 0.30, green: 0.42, blue: 0.12))
+        .tint(UIUIStyle.tint(scheme))
         .sheet(item: $model.workspaceSheet) { _ in
             VStack(spacing: 0) {
                 HStack {

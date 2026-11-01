@@ -53,7 +53,7 @@ enum SettingsNativeSmoke {
         @Environment(\.colorScheme) private var scheme
         var body: some View {
             content.background(UIUIStyle.paper(scheme))
-                .tint(scheme == .dark ? UIUIStyle.lime : Color(red: 0.30, green: 0.42, blue: 0.12))
+                .tint(UIUIStyle.tint(scheme))
         }
     }
 

@@ -61,7 +61,7 @@ struct OnboardingView: View {
         HStack(spacing: 6) {
             ForEach(Step.allCases, id: \.self) { item in
                 VStack(spacing: 5) {
-                    Capsule().fill(item.rawValue <= step.rawValue ? UIUIStyle.lime : Color.primary.opacity(0.1)).frame(height: 4)
+                    Capsule().fill(item.rawValue <= step.rawValue ? UIUIStyle.accent : Color.primary.opacity(0.1)).frame(height: 4)
                     Text(item.title).font(.system(size: 9, weight: item == step ? .semibold : .regular))
                         .foregroundStyle(item == step ? .primary : .secondary)
                 }
@@ -233,7 +233,7 @@ struct OnboardingView: View {
                     EmptyView()
                 } currentValueLabel: {
                     Text("\(Int(fraction * 100))%").font(.system(size: 10)).monospacedDigit().foregroundStyle(.secondary)
-                }.progressViewStyle(.linear).tint(UIUIStyle.lime)
+                }.progressViewStyle(.linear).tint(UIUIStyle.accent)
             }
             if model.isPreparingSpeech {
                 // Only a real download says "download"; a copy with the models
@@ -286,7 +286,7 @@ struct OnboardingView: View {
             Text("“\(PracticeSample.sentence)”")
                 .font(.system(size: 14, weight: .medium, design: .rounded))
                 .padding(.horizontal, 12).padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
-                .background(UIUIStyle.lime.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+                .background(UIUIStyle.accent.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
                 .textSelection(.enabled)
             Text("\(verb) \(model.settings.voiceTriggerKey.title), speak, then \(finish). Keep this window in front.")
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -327,7 +327,7 @@ struct OnboardingView: View {
             checkRow(model.isPreparingSpeech ? "Speech model · \(model.speechPreparationFraction.map { "\(Int($0 * 100))%" } ?? "preparing")" : "Speech model",
                      ok: speechReady, step: .speech)
             if model.isPreparingSpeech, let fraction = model.speechPreparationFraction {
-                ProgressView(value: fraction).progressViewStyle(.linear).tint(UIUIStyle.lime)
+                ProgressView(value: fraction).progressViewStyle(.linear).tint(UIUIStyle.accent)
             }
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))

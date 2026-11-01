@@ -5,8 +5,11 @@ import UIUICore
 struct HistoryListView: View {
     @Bindable var model: AppModel
     @State private var appFilter: String?
-    init(model: AppModel, initialAppFilter: String? = nil) {
+    /// Scrolls with the history, so the whole page moves as one at any window size.
+    private let top: AnyView
+    init(model: AppModel, initialAppFilter: String? = nil, top: AnyView = AnyView(EmptyView())) {
         self.model = model
+        self.top = top
         _appFilter = State(initialValue: initialAppFilter)
     }
     @State private var focusedID: UUID?
@@ -24,10 +27,7 @@ struct HistoryListView: View {
     private var isFiltering: Bool { !model.searchText.isEmpty || activeFilter != nil }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            if items.isEmpty { emptyState } else { list }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        list.frame(maxWidth: .infinity, maxHeight: .infinity)
             .alert("Delete this saved text?", isPresented: Binding(
                 get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }
             ), presenting: pendingDelete) { item in
@@ -90,7 +90,7 @@ struct HistoryListView: View {
             } else if !model.settings.saveDictationHistory && !isFiltering {
                 Button("Open Settings") { model.openSettings() }.buttonStyle(.borderless).font(.system(size: 12))
             }
-        }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }.padding(24).frame(maxWidth: .infinity, minHeight: 180)
     }
 
     private var emptyDetail: String {
@@ -102,6 +102,9 @@ struct HistoryListView: View {
     private var list: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                top
+                header
+                if items.isEmpty { emptyState }
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ForEach(sections) { section in
                         Section {
@@ -197,9 +200,9 @@ private struct HistoryRow: View {
                 QuietIconButton(symbol: "doc.on.doc", label: "Copy saved text") { model.copy(item.body) }
             }
         }.padding(.horizontal, 22)
-            .background((isFocused ? UIUIStyle.lime.opacity(0.16) : hovering ? Color.primary.opacity(0.03) : .clear))
+            .background((isFocused ? UIUIStyle.accent.opacity(0.16) : hovering ? Color.primary.opacity(0.03) : .clear))
             .overlay(alignment: .leading) {
-                if isFocused { Rectangle().fill(UIUIStyle.lime).frame(width: 3) }
+                if isFocused { Rectangle().fill(UIUIStyle.accent).frame(width: 3) }
             }
             .onHover { hovering = $0 }
             .contextMenu {
@@ -321,7 +324,7 @@ struct SavedTextView: View {
 
     private func noticeBanner(_ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(UIUIStyle.lime).accessibilityHidden(true)
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(UIUIStyle.accent).accessibilityHidden(true)
             Text(text).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if undoableFix != nil {
@@ -330,7 +333,7 @@ struct SavedTextView: View {
             Button { notice = nil } label: { Image(systemName: "xmark") }
                 .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("Dismiss").help("Dismiss")
         }.padding(.horizontal, 12).padding(.vertical, 9)
-            .background(UIUIStyle.lime.opacity(0.14), in: RoundedRectangle(cornerRadius: 9))
+            .background(UIUIStyle.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 9))
             .accessibilityElement(children: .contain)
     }
 
@@ -458,7 +461,7 @@ final class FixTextView: NSTextView {
         guard let layoutManager else { return }
         for range in marked { layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range) }
         marked = [highlight, hover, keyboardWord].compactMap { $0 }
-        let color = NSColor(UIUIStyle.lime).withAlphaComponent(0.28)
+        let color = NSColor(UIUIStyle.accent).withAlphaComponent(0.28)
         for range in marked { layoutManager.addTemporaryAttributes([.backgroundColor: color], forCharacterRange: range) }
     }
 

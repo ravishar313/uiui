@@ -88,6 +88,13 @@ struct NotchStage: View {
         NotchAnnouncement.resolve(phase: phase, paused: paused, cannotHear: model.notchExtras.cannotHear)
     }
     private func surface(expanded: Bool) -> CGSize {
+        if expanded, let ask = model.askPresentation {
+            return NotchLayout.askSize(ask, cameraWidth: model.notchCameraWidth, cameraHeight: model.notchCameraHeight,
+                                       hasCamera: model.notchHasCamera, size: model.settings.notchSize)
+        }
+        return speechSurface(expanded: expanded)
+    }
+    private func speechSurface(expanded: Bool) -> CGSize {
         NotchLayout.surfaceSize(phase: phase, cameraWidth: model.notchCameraWidth,
             cameraHeight: model.notchCameraHeight, hasCamera: model.notchHasCamera, expanded: expanded,
             size: model.settings.notchSize, transcriptOpen: model.notchExtras.transcriptOpen)
@@ -103,13 +110,21 @@ struct NotchStage: View {
                     isVisible: feedbackPreviewIsVisible ?? model.settings.notchEnabled,
                     paused: paused, dimmed: model.notchExtras.pointerOver && model.hasCancellableVoiceInput,
                     textActive: !model.notchTranscript.isEmpty)
+                    .opacity(model.askPresentation.map { $0.mode == .answering } ?? true ? 1 : 0)
                     .background(Color.black)
                     .frame(width: surface(expanded: model.notchExpanded).width,
                            height: surface(expanded: model.notchExpanded).height)
                     .animation(revealAnimation, value: model.notchExpanded)
                     .animation(revealAnimation, value: phase)
                     .animation(revealAnimation, value: model.notchExtras.transcriptOpen)
-                if model.notchMounted {
+                if let ask = model.askPresentation {
+                    NotchAskView(ask: ask, cameraWidth: model.notchHasCamera ? model.notchCameraWidth : 0,
+                                 header: model.notchHasCamera ? max(32, model.notchCameraHeight) : 32,
+                                 onCopy: { model.copyAskReceiptWords() }, onDismiss: { model.dismissAskReceipt() },
+                                 onHover: { model.setAskPointerOver($0) })
+                        .id(ask.mode)
+                        .frame(width: surface(expanded: true).width, height: surface(expanded: true).height)
+                } else if model.notchMounted {
                     NotchView(model: model, expanded: true, onExpand: onExpand, onCollapse: onCollapse, rendersMosaic: false,
                               onPointerEnter: onPointerEnter, onPointerExit: onPointerExit)
                         .transaction { $0.animation = nil }
@@ -118,6 +133,7 @@ struct NotchStage: View {
                         .animation(revealAnimation, value: model.notchExpanded)
                         .allowsHitTesting(model.notchExpanded)
                 }
+                if model.askPresentation == nil {
                 NotchView(model: model, expanded: false, onExpand: onExpand, onCollapse: onCollapse, rendersMosaic: false,
                           onPointerEnter: onPointerEnter, onPointerExit: onPointerExit)
                     .transaction { $0.animation = nil }
@@ -125,6 +141,7 @@ struct NotchStage: View {
                     .opacity(model.notchExpanded ? 0 : 1)
                     .animation(revealAnimation, value: model.notchExpanded)
                     .allowsHitTesting(!model.notchExpanded)
+                }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
             .mask(alignment: .top) {
@@ -136,6 +153,7 @@ struct NotchStage: View {
             }
         }
         .onChange(of: model.notchExtras.transcriptOpen) { _, _ in onLayoutChange() }
+        .onChange(of: surface(expanded: true)) { _, _ in if model.askPresentation != nil { onLayoutChange() } }
         .onChange(of: announcement) { _, new in
             if let new { NotchAnnouncer.post(new) }
         }

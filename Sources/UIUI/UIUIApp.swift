@@ -6,6 +6,8 @@ import UIUICore
 @main
 struct UIUIBootstrap {
     @MainActor static func main() async {
+        // `uiui ask` and `uiui stats` are run by agents and never start the app.
+        if let code = AgentAskCommand.runIfRequested(arguments: CommandLine.arguments, dataDirectory: AppModel.defaultDataDirectory) { exit(code) }
         // Test and developer commands exist only in debug builds. Release
         // binaries ignore these flags and always start the app.
         #if DEBUG
@@ -167,6 +169,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panels: PanelCoordinator?
     private var statusMenu: StatusMenuController?
     private let shortcuts = GlobalShortcuts()
+    /// Listens for the answer key only while a question is waiting.
+    private let answerShortcuts = GlobalShortcuts()
     private let updater = AppUpdater()
     private var speechWarmup: Task<Void, Never>?
     private var terminating = false
@@ -185,10 +189,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onSettingsChanged = { [weak self, weak panels] in
             panels?.updateNotch()
             self?.configureVoiceTrigger()
+            self?.configureAgentAsk()
         }
         model.onSpeechPreferencesChanged = { [weak self] in self?.refreshSpeechWarmth() }
         model.onActivityChanged = { [weak self, weak panels] in
             self?.model.resumeQueuedVoiceCaptureIfReady()
+            self?.model.refreshAgentAsk()
             panels?.activityChanged()
             self?.refreshEscapeCancellation()
             self?.updater.activityChanged()
@@ -201,16 +207,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model?.cancelVoiceInputFromEscape()
             panels?.dismissCaptureUI()
         }
+        shortcuts.onBackspace = { [weak model] in model?.voice.eraseLastWord() }
         shortcuts.onStatusChanged = { [weak model] status in model?.voiceTriggerStatus = status }
         SystemSetup.shared.onAccessibilityChanged = { [weak self] in self?.shortcuts.refreshGlobalAccess() }
         model.onVoiceTriggerAccess = { [weak self] in
             SystemSetup.shared.requestAccessibility()
             self?.shortcuts.refreshGlobalAccess()
         }
+        answerShortcuts.onVoicePressed = { [weak model] in model?.answerKeyPressed() }
+        answerShortcuts.onVoiceReleased = { [weak model] in model?.answerKeyReleased() }
+        answerShortcuts.onVoiceCancelled = { [weak model] in model?.answerKeyChorded() }
+        model.onAskKeyChanged = { [weak self] in self?.configureAnswerKey() }
         configureVoiceTrigger()
         installStatusMenu()
         Task {
             await model.start()
+            configureAgentAsk()
             refreshSpeechWarmth()
             panels.updateNotch()
             model.voiceTriggerStatus = shortcuts.status
@@ -254,7 +266,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         speechWarmup?.cancel()
         Task { await LocalSpeechModel.clear() }
-        model.shutdown(); panels?.shutdown(); shortcuts.remove()
+        model.flushAgentQuestions(.unavailable); model.agentAskServer?.stop()
+        model.shutdown(); panels?.shutdown(); shortcuts.remove(); answerShortcuts.remove()
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { panels?.openHome(); return true }
 
@@ -274,6 +287,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshEscapeCancellation()
         model.voiceTriggerStatus = shortcuts.status
     }
+    private func configureAnswerKey() {
+        answerShortcuts.install(key: model.agentAnswerKey, enabled: model.agentAskAcceptsKey && !model.isRecordingShortcut)
+    }
+    /// The socket exists only while agents are turned on. Turning them off tells
+    /// every waiting agent at once.
+    private func configureAgentAsk() {
+        configureAnswerKey()
+        guard model.repository != nil else { return }
+        let wanted = model.settings.agentAskEnabled && model.settings.notchEnabled
+        if wanted, model.agentAskServer == nil {
+            let server = AgentAskServer(socketURL: model.agentAskSocketURL)
+            server.onRequest = { [weak model] id, request in model?.receiveAgentRequest(id, request) }
+            server.onDisconnect = { [weak model] id in model?.agentDisconnected(id) }
+            server.onLockChanged = { [weak model] locked in model?.agentAskLockChanged(locked) }
+            server.onSleep = { [weak model] in model?.agentAskWillSleep() }
+            do { try server.start(); model.agentAskServer = server }
+            catch { model.statusMessage = "Agents couldn't start. Turn them off and on to try again." }
+        } else if !wanted, let server = model.agentAskServer {
+            model.flushAgentQuestions(.unavailable)
+            server.stop()
+            model.agentAskServer = nil
+        }
+    }
     private func refreshSpeechWarmth() {
         speechWarmup?.cancel()
         let keepReady = model.settings.voiceTriggerEnabled && LocalSpeechModel.supports(locale: model.settings.speechLocale)
@@ -286,6 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func refreshEscapeCancellation() {
         shortcuts.setEscapeCancellationEnabled(model.hasCancellableVoiceInput)
+        shortcuts.setBackspaceEditingEnabled(model.voice.acceptsWordErasure)
     }
     private func installApplicationMenu() {
         let root = NSMenu()

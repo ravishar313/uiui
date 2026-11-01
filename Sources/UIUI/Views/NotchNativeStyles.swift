@@ -114,7 +114,7 @@ enum NotchNativeDrawing {
         let header = headerHeight(geometry)
         let edges = wingEdges(geometry)
         let wing = geometry.cameraRect.map { $0.minX } ?? 24
-        let offset = min(22, max(10, wing * 0.5))
+        let offset = max(10, wing * 0.5) // The middle of the wing, at every notch size.
         let centers = [edges.left - offset, edges.right + offset]
         let pose = eyePose(phase: input.phase, time: input.time, progress: input.progress, audio: input.audio,
                            paused: input.paused, glance: input.glance, reduceMotion: input.reduceMotion)
@@ -193,7 +193,10 @@ enum NotchNativeDrawing {
         let bounds = geometry.bounds
         let barWidth: CGFloat = 2.2
         let pitch: CGFloat = 5.4
-        let inset: CGFloat = geometry.cameraRect == nil ? 12 : 9
+        // The group of bars sits in the middle of the wing, at every notch size.
+        let groupWidth = CGFloat(barCount - 1) * pitch + barWidth
+        let wing = geometry.cameraRect.map { $0.minX } ?? 0
+        let inset: CGFloat = geometry.cameraRect == nil ? 12 : max(9, (wing - groupWidth) / 2)
         let spec = barHeights(phase: input.phase, time: input.time, progress: input.progress,
                               bars: input.bars, paused: input.paused, header: header)
         for j in 0..<barCount {

@@ -312,15 +312,17 @@ enum MosaicNativeSmoke {
             .init(name: "pill-recording", phase: .recording, state: .init(), text: transcript, camera: false, progress: 0.7),
             .init(name: "pill-hover-transcript", phase: .recording, state: .init(transcriptOpen: true, hovering: true), text: longText, camera: false, progress: 0.7),
             .init(name: "pill-sent-undo", phase: .dispatched, state: .init(undo: true, sentApp: "Notes"), text: transcript, camera: false, progress: 1),
+            .init(name: "idle-collapsed-listening", phase: .idle, state: .init(), text: "", camera: true, progress: 0),
             .init(name: "pill-collapsed-listening", phase: .recording, state: .init(), text: transcript, camera: false, progress: 0.7)
         ]
         var tiles: [Tile] = []
         for item in cases {
             model.notchHasCamera = item.camera
+            model.settings.notchSize = item.name.hasPrefix("idle-") ? .compact : .standard
             let collapsed = item.name.hasSuffix("collapsed-listening")
             let size = NotchLayout.surfaceSize(phase: item.phase, cameraWidth: model.notchCameraWidth,
                 cameraHeight: model.notchCameraHeight, hasCamera: item.camera, expanded: !collapsed,
-                transcriptOpen: item.state.transcriptOpen)
+                size: model.settings.notchSize, transcriptOpen: item.state.transcriptOpen)
             var view = NotchView(model: model, expanded: !collapsed, onExpand: {}, onCollapse: {})
             view.feedbackPreviewPhase = item.phase
             view.feedbackPreviewProgress = item.progress

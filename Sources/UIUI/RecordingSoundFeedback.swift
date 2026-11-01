@@ -22,11 +22,11 @@ final class RecordingSoundFeedback {
         }
     }
 
-    func play(_ cue: RecordingSound) {
-        let key = String(describing: cue)
+    func play(_ cue: RecordingSound, pack: SoundPack = .soft, volume: Double = 1) {
+        let key = "\(pack.rawValue).\(cue)"
         let sound: NSSound
         if let cached = sounds[key] { sound = cached }
-        else if let made = NSSound(data: SoundCueSynth.wavData(for: Self.cue(cue))) {
+        else if let made = NSSound(data: SoundCueSynth.wavData(for: Self.cue(cue), pack: pack)) {
             sounds[key] = made; sound = made
         } else {
             let fallback: String
@@ -35,7 +35,7 @@ final class RecordingSoundFeedback {
             sounds[key] = native; sound = native
         }
         playing?.stop()
-        sound.volume = cue == .ready ? 0.30 : 0.25
+        sound.volume = Float(volume) * (cue == .ready ? 0.30 : 0.25)
         playing = sound
         sound.play()
     }

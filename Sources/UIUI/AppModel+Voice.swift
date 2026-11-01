@@ -4,7 +4,8 @@ import UIUICore
 @MainActor
 extension AppModel {
     func voiceTriggerPressed() {
-        guard settings.voiceTriggerEnabled else { return }
+        // One microphone: the dictation key does nothing during an answer.
+        guard settings.voiceTriggerEnabled, agentAsk.answering == nil else { return }
         voiceTriggerIsPressed = true
         voiceKeyPressedAt = DispatchTime.now().uptimeNanoseconds
         handleVoiceGesture(.pressed)
@@ -79,8 +80,9 @@ extension AppModel {
         dictationFeedback = nil
         notchExtras.clearUndo()
         dictationCaptureGeneration = UUID()
-        voiceRecoveryCaptureID = dictationCaptureGeneration
-        recordingRecovery.begin(id: dictationCaptureGeneration, project: captureProject, kind: .dictation)
+        // An answer goes back to its agent and is not kept as a draft.
+        voiceRecoveryCaptureID = kind == .dictation ? dictationCaptureGeneration : nil
+        if kind == .dictation { recordingRecovery.begin(id: dictationCaptureGeneration, project: captureProject, kind: .dictation) }
         if kind == .dictation, LocalSpeechModel.supports(locale: settings.speechLocale) {
             cleanup.begin(dictationCaptureGeneration)
             cleanup.prepare()
@@ -138,6 +140,25 @@ extension AppModel {
         dictationFeedback = receipt
     }
     func requestVoiceTriggerAccess() { onVoiceTriggerAccess?() }
+    /// Plays the chosen look in the real notch for a moment, so a change in Settings
+    /// shows at once. The microphone stays off and real capture always wins.
+    func playNotchAppearancePreview() {
+        guard systemServicesAreEnabled, settings.notchEnabled, notchAppearancePreview != nil || !notchStylePreviewActive else { return }
+        notchAppearancePreview?.cancel()
+        notchStylePreviewActive = true
+        notchAppearancePreview = Task { [weak self] in
+            let start = Date()
+            while !Task.isCancelled, Date().timeIntervalSince(start) < 3 {
+                let t = Date().timeIntervalSince(start)
+                self?.notchPreviewLevel = max(0.05, abs(sin(t * 7.3)) * (0.55 + 0.45 * sin(t * 1.7)))
+                try? await Task.sleep(for: .milliseconds(60))
+            }
+            guard !Task.isCancelled, let self else { return }
+            notchStylePreviewActive = false
+            notchPreviewLevel = 0
+            notchAppearancePreview = nil
+        }
+    }
     func disableVoice() {
         settings.voiceTriggerEnabled = false
     }
@@ -198,7 +219,7 @@ extension AppModel {
     }
 
     private func dictationWords(_ input: String) -> String {
-        TextProcessing.applyingVocabulary(to: DictationEditing.applyingCommands(to: input), entries: effectiveVocabulary, project: captureProject)
+        TextProcessing.applyingVocabulary(to: DictationEditing.applyingCommands(to: input), entries: effectiveVocabulary, project: captureProject, isKnownWord: KnownWords.contains)
     }
 
     func performVoiceTyping(_ input: String, isRetry: Bool = false) {
@@ -212,9 +233,13 @@ extension AppModel {
             dictationDeliveryStartedFor = captureID
         }
         let vocabularyText = inputKind == .dictation ? dictationWords(input)
-            : TextProcessing.applyingVocabulary(to: input, entries: effectiveVocabulary, project: captureProject)
+            : TextProcessing.applyingVocabulary(to: input, entries: effectiveVocabulary, project: captureProject, isKnownWord: KnownWords.contains)
         let fallback = inputKind == .dictation ? punctuateDictation(vocabularyText) : vocabularyText
         lastTypedText = fallback
+        if !isRetry, let started = voiceRequestedAt, let finished = voiceFinishedAt, finished >= started {
+            let spokenMS = Double(finished - started) / 1_000_000
+            Task { [weak self] in await self?.record(UsageEvent(action: DictationUsage.spoken, durationMS: spokenMS)) }
+        }
         let destination = isRetry
             ? (captureEnabled ? TextDelivery.captureTarget() : nil)
             : voiceDestination

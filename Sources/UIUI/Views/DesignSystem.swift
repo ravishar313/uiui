@@ -1,8 +1,25 @@
+import Observation
 import SwiftUI
 import UIUICore
 
 enum UIUIStyle {
-    static let lime = Color(red: 0.79, green: 0.94, blue: 0.40)
+    /// Observable, so every view that reads the accent redraws the moment it changes.
+    @Observable final class AccentStore {
+        var rgb = UIUIAccent.lime.resolved(customHex: "")
+        var ink = UIUIAccent.lime.resolvedInk(customHex: "")
+    }
+    @MainActor static let accentStore = AccentStore()
+    /// The chosen accent colour. AppModel updates it when the setting changes.
+    @MainActor static var accent: Color { color(accentStore.rgb) }
+    @MainActor static func apply(_ choice: UIUIAccent, customHex: String) {
+        let rgb = choice.resolved(customHex: customHex)
+        let ink = choice.resolvedInk(customHex: customHex)
+        if accentStore.rgb != rgb { accentStore.rgb = rgb }
+        if accentStore.ink != ink { accentStore.ink = ink }
+    }
+    /// Accent for controls and links: the darker form on light backgrounds.
+    @MainActor static func tint(_ scheme: ColorScheme) -> Color { scheme == .dark ? accent : color(accentStore.ink) }
+    static func color(_ rgb: AccentRGB) -> Color { Color(red: rgb.red, green: rgb.green, blue: rgb.blue) }
     static let ink = Color(red: 0.12, green: 0.14, blue: 0.12)
     static let muted = Color.secondary
     static func paper(_ scheme: ColorScheme) -> Color {
@@ -13,7 +30,9 @@ enum UIUIStyle {
 struct UIUIMark: View {
     var size: CGFloat = 30
     var dark = false
-    var accent: Color = UIUIStyle.lime
+    var accent: Color = UIUIStyle.accent
+    /// The eye glint. At notch size it reads as a chip out of the eye.
+    var highlight = true
     var body: some View {
         HStack(spacing: size * 0.12) {
             ForEach(0..<2) { _ in
@@ -21,9 +40,11 @@ struct UIUIMark: View {
                     .fill(dark ? accent : UIUIStyle.ink)
                     .frame(width: size * 0.22, height: size * 0.40)
                     .overlay(alignment: .topTrailing) {
-                        Circle().fill(dark ? Color.black : accent)
-                            .frame(width: size * 0.075, height: size * 0.075)
-                            .offset(x: -size * 0.04, y: size * 0.055)
+                        if highlight {
+                            Circle().fill(dark ? Color.black : accent)
+                                .frame(width: size * 0.075, height: size * 0.075)
+                                .offset(x: -size * 0.04, y: size * 0.055)
+                        }
                     }
             }
         }
@@ -34,7 +55,7 @@ struct UIUIMark: View {
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
-    var accent: Color = UIUIStyle.lime
+    var accent: Color = UIUIStyle.accent
     var compact = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.system(size: 12, weight: .semibold))
