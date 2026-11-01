@@ -156,24 +156,23 @@ enum ModelStore {
               let data = try? Data(contentsOf: manifest), ModelPack.id(manifest: data) == expectedID else {
             throw Failure(message: "The \(kind.rawValue) model does not match what this version of uiui needs.")
         }
-        if kind == .phonon {
-            do { try PhononSpeechModel.verify(at: directory) } catch { throw Failure(message: "The uiui S1 speech model failed verification.") }
-            return
-        }
+        // Check the files against this pack's own manifest, not this app's model. During an update
+        // the running app verifies the next version's pack, and that may be a newer model.
+        let label = kind == .phonon ? "uiui S1 speech" : kind.rawValue
         guard let list = try? JSONDecoder().decode(FileList.self, from: data), !list.files.isEmpty, list.files.count <= 32 else {
-            throw Failure(message: "The \(kind.rawValue) model manifest is invalid.")
+            throw Failure(message: "The \(label) model manifest is invalid.")
         }
         let root = directory.resolvingSymlinksInPath().path + "/"
         for item in list.files {
             let pieces = item.path.split(separator: "/", omittingEmptySubsequences: false)
             guard !item.path.hasPrefix("/"), pieces.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }), item.bytes > 0 else {
-                throw Failure(message: "The \(kind.rawValue) model manifest is invalid.")
+                throw Failure(message: "The \(label) model manifest is invalid.")
             }
             let url = directory.appendingPathComponent(item.path)
             guard url.resolvingSymlinksInPath().path.hasPrefix(root),
                   let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),
                   values.isRegularFile == true, values.isSymbolicLink != true, Int64(values.fileSize ?? -1) == item.bytes,
-                  try sha256(of: url) == item.sha256 else { throw Failure(message: "The \(kind.rawValue) model failed verification.") }
+                  try sha256(of: url) == item.sha256 else { throw Failure(message: "The \(label) model failed verification.") }
         }
     }
 
