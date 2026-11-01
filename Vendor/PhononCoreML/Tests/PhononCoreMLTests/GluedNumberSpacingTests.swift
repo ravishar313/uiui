@@ -37,6 +37,29 @@ final class GluedNumberSpacingTests: XCTestCase {
         XCTAssertEqual(fix("नमस्ते सब ठीक है 12345"), "नमस्ते सब ठीक है 12345")
     }
 
+    func testDictationClosesUpNumbersTheModelSpacedOut() {
+        let cases = [
+            "I think we moved it to3 :30 , right.": "I think we moved it to 3:30, right.",
+            "The meeting is at 3 :30 and it costs 500 .": "The meeting is at 3:30 and it costs 500.",
+            "Call me at9 pm on the 21 st of March.": "Call me at 9 pm on the 21st of March.",
+            "It went up by 10 .5 % to about 2 ,000 users.": "It went up by 10.5% to about 2,000 users.",
+            "We shipped version 2 .0 at4 :15 in the morning.": "We shipped version 2.0 at 4:15 in the morning.",
+            "The invoice for $12 ,500 is due at $30 .": "The invoice for $12,500 is due at $30.",
+            "Are you 2 nd or 3 rd?": "Are you 2nd or 3rd?"
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(GluedNumberSpacing.applyForDictation(input), expected)
+            XCTAssertEqual(GluedNumberSpacing.applyForDictation(expected), expected)
+        }
+    }
+
+    func testDictationLeavesEverythingElseAlone() {
+        for s in ["no digits , here .", "see 5 stars and 3 things", "room 4 or 5", "x1 and in1 and md5", "version 2.0", "at 3:30", "12 , then", "कल at 10 बजे", "https://example.com/at3", "2 . Next"] {
+            let expected = s.replacingOccurrences(of: "12 , then", with: "12, then").replacingOccurrences(of: "2 . Next", with: "2. Next")
+            XCTAssertEqual(GluedNumberSpacing.applyForDictation(s), expected, s)
+        }
+    }
+
     @available(macOS 15.0, *)
     func testTranscriptOptionDefaultsOn() {
         XCTAssertTrue(Transcriber.Options().spaceGluedNumbers)

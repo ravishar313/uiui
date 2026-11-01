@@ -76,4 +76,24 @@ public enum GluedNumberSpacing {
         }
         return out as String
     }
+
+    // uiui: S1 emits times, decimals and thousands as separate spaced tokens ("to3 :30 ,", "10 .5 %", "2 ,000", "21 st").
+    // A two-letter preposition before one digit is split here rather than in `apply`, whose rules match the Python reference.
+    static let shortWordDigit = try! NSRegularExpression(pattern: "(?<![A-Za-z0-9/\\\\@_#$~=<>+&%*^|.:-])([Aa]t|[Tt]o|[Bb]y|[Oo]n|[Oo]f)([0-9])(?![A-Za-z0-9/\\\\@_#$~=<>+&%*^|-])")
+    static let insideNumber = try! NSRegularExpression(pattern: "([0-9]) ([:.,])(?=[0-9])")
+    static let afterNumber = try! NSRegularExpression(pattern: "([0-9]) ([,.?!:;%])(?![A-Za-z0-9])")
+    static let ordinal = try! NSRegularExpression(pattern: "([0-9]) (st|nd|rd|th)(?![A-Za-z0-9])")
+
+    /// The text a person reads: `apply`, then numbers closed up with their punctuation. Idempotent, ASCII-only matching.
+    public static func applyForDictation(_ text: String) -> String {
+        guard text.utf8.contains(where: { $0 >= 48 && $0 <= 57 }) else { return text }
+        func replacing(_ regex: NSRegularExpression, _ value: String, with template: String) -> String {
+            regex.stringByReplacingMatches(in: value, range: NSRange(location: 0, length: (value as NSString).length), withTemplate: template)
+        }
+        var value = replacing(shortWordDigit, text, with: "$1 $2")
+        value = apply(value)
+        value = replacing(insideNumber, value, with: "$1$2")
+        value = replacing(afterNumber, value, with: "$1$2")
+        return replacing(ordinal, value, with: "$1$2")
+    }
 }

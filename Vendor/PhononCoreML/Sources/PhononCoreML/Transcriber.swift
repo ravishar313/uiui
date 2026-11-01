@@ -403,7 +403,7 @@ public final class Transcriber {
         let wall = Date().timeIntervalSince(tStart)
         timingLock.lock(); timing.wallS += wall; timing.audioS += Double(n) / 16000; timing.windows += windows.count; timing.overlapped += overlapped; timingLock.unlock()
         let joined = words.map { $0.text }.joined(separator: " ")
-        return Transcript(text: options.spaceGluedNumbers ? GluedNumberSpacing.apply(joined) : joined, words: words, segments: segments, audioSeconds: Double(n) / 16000, decodeSeconds: wall, windows: windows.count)
+        return Transcript(text: options.spaceGluedNumbers ? GluedNumberSpacing.applyForDictation(joined) : joined, words: words, segments: segments, audioSeconds: Double(n) / 16000, decodeSeconds: wall, windows: windows.count)
     }
 
     // MARK: rescue
