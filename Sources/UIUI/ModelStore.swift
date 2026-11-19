@@ -286,7 +286,7 @@ enum ModelStore {
 }
 
 /// Sums progress across parallel parts and reports at most once per percent.
-private final class DownloadReporter: @unchecked Sendable {
+final class DownloadReporter: @unchecked Sendable {
     private let label: String
     private let total: Int64
     private let report: ModelStore.Progress?
@@ -314,13 +314,19 @@ private final class DownloadReporter: @unchecked Sendable {
     }
 }
 
-private final class PartDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+/// The async `download(for:delegate:)` never calls `didWriteData` on a task delegate,
+/// so progress comes from observing the task's received byte count instead.
+final class PartDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     let index: Int
     let owner: DownloadReporter
+    private let lock = NSLock()
+    private var observation: NSKeyValueObservation?
     init(index: Int, owner: DownloadReporter) { self.index = index; self.owner = owner }
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
-                    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        owner.update(part: index, bytes: totalBytesWritten)
+    deinit { observation?.invalidate() }
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        let observation = task.observe(\.countOfBytesReceived, options: [.new]) { [index, owner] task, _ in
+            owner.update(part: index, bytes: task.countOfBytesReceived)
+        }
+        lock.withLock { self.observation = observation }
     }
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
 }
