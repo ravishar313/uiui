@@ -22,7 +22,7 @@ final class SettingsWordingTests: XCTestCase {
         }
         XCTAssertEqual(SpeechLanguageOptions.primary.title, "English + Hinglish")
         XCTAssertTrue(SpeechLanguageOptions.others(including: "hi-IN").first { $0.locale == "hi-IN" }!.title.contains("Apple"))
-        XCTAssertTrue(SpeechLanguageOptions.others(including: "en-US").first { $0.locale == "en-US" }!.title.contains("uiui S1"))
+        XCTAssertTrue(SpeechLanguageOptions.others(including: "en-US").first { $0.locale == "en-US" }!.title.contains("uiui S2"))
     }
 
     func testSetupButtonNamesWhatItDoes() {

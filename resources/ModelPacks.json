@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "packs": [
-    {"name": "Phonon", "id": "3de105625796", "archive": "uiui-model-phonon-3de105625796.aar", "sha256": "2a436e098e2ef6bd9db0c87ff251fc71419212cdc9e2dbbca26fe8edd6b1c92c", "bytes": 256226000},
+    {"name": "Phonon", "id": "28f6558346d7", "archive": "uiui-model-phonon-28f6558346d7.aar", "sha256": "024cd14cfaef33316faacca2c171823aadb3d2cb82d9abc6b7dfa027c0d7490d", "bytes": 256632036},
     {"name": "MiniLM", "id": "045e8902908a", "archive": "uiui-model-minilm-045e8902908a.aar", "sha256": "1a1dac16171e1cd1180a4cfb5ad8028c60d2583f3d9f7dbb0220d2deededc4d6", "bytes": 27724808}
   ]
 }

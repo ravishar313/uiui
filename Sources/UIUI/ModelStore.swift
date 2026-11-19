@@ -158,7 +158,7 @@ enum ModelStore {
         }
         // Check the files against this pack's own manifest, not this app's model. During an update
         // the running app verifies the next version's pack, and that may be a newer model.
-        let label = kind == .phonon ? "uiui S1 speech" : kind.rawValue
+        let label = kind == .phonon ? "uiui S2 speech" : kind.rawValue
         guard let list = try? JSONDecoder().decode(FileList.self, from: data), !list.files.isEmpty, list.files.count <= 32 else {
             throw Failure(message: "The \(label) model manifest is invalid.")
         }

@@ -4,7 +4,7 @@ Private, on-device dictation for macOS, tuned for how Indian professionals actua
 
 Tap a key, speak, and the text is pasted where you were typing. Audio never leaves your Mac.
 
-- **Built for Indian speech:** our speech model, uiui S1, handles Indian English and Hindi-English mixing in Roman script.
+- **Built for Indian speech:** our speech model, uiui S2, handles Indian English and Hindi-English mixing in Roman script.
 - **Fast:** runs on the Apple Neural Engine at well over 100 times real time.
 - **Local:** no cloud fallback, no wake phrase, no background listening. The microphone is off between recordings.
 - **Native:** SwiftUI and AppKit, with no web runtime.
@@ -15,7 +15,8 @@ Word error rate %, lower is better. Public subsets of 150 clips per set, on an A
 
 | | Svarah (Indian English) | MUCS (Hinglish) | Hindi accents | LibriSpeech | Disk |
 |---|---|---|---|---|---|
-| **uiui S1** | 12.94 | **41.31** | 28.93 | 2.24 | 0.38 GB |
+| **uiui S2** | 12.73 | **38.80** | 27.45 | 2.30 | 0.38 GB |
+| uiui S1 (previous) | 12.94 | 41.31 | 28.93 | 2.24 | 0.38 GB |
 | Parakeet v3 | 16.59 | 87.17 | 77.70 | 2.27 | 2.5 GB |
 | Whisper turbo (auto) | 12.0 | 72.2 | 57.1 | 2.3 | 1.6 GB |
 | Qwen3-ASR-1.7B (auto) | 14.7 | 47.6 | **23.0** | **1.6** | 4.7 GB |
@@ -38,7 +39,7 @@ Larger models still win on pure Hindi and clearly read English. The [technical r
 
 | Model | Job | Runtime |
 |---|---|---|
-| **uiui S1** | Speech to text, with punctuation and casing. Built from [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) through Fermion Research's [Phonon-2](https://huggingface.co/FermionResearch/Phonon-2) | Core ML, Neural Engine and CPU, macOS 15+ |
+| **uiui S2** | Speech to text, with punctuation and casing. Built from [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) through Fermion Research's [Phonon-2](https://huggingface.co/FermionResearch/Phonon-2) | Core ML, Neural Engine and CPU, macOS 15+ |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | Trims non-speech tails | Core ML, CPU |
 | **uiui P1** | Adds punctuation and casing only to speech that arrives all lowercase with no `.,?!`. Built from [punctuator-multilingual-minilm-v2](https://huggingface.co/ldenoue/punctuator-multilingual-minilm-v2) | ONNX Runtime, CPU |
 
@@ -82,7 +83,7 @@ Packaging and releases are described in [updates](docs/updates.md).
 | Part | Licence |
 |---|---|
 | uiui source code | [Apache-2.0](LICENSE) |
-| uiui S1 weights | CC-BY-SA-4.0, derived from CC-BY-4.0 models; see `resources/Phonon/NOTICE` |
+| uiui S2 weights | CC-BY-SA-4.0, derived from CC-BY-4.0 models; see `resources/Phonon/NOTICE` |
 | uiui P1 weights | MIT; see `resources/MiniLM/NOTICE.txt` |
 | Vendored components | Their own licences, under `Vendor/` |
 

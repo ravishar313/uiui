@@ -5,10 +5,10 @@ import PhononCoreML
 /// The selected English recognizer. We ship pinned, precompiled assets: neither
 /// a trigger nor a warm checkout can download or compile a different model.
 enum PhononSpeechModel {
-    static let repository = "uiui/S1"
-    static let revision = "full-1029-s16000-f16"
-    static let containerSHA256 = "1ebefdb308a1b4f4b3fd8df86b1340cb6934b4c935f4c97386ba7119c07ff249"
-    static let modelDescription = "uiui S1 · Neural Engine · on device"
+    static let repository = "uiui/S2"
+    static let revision = "pl-1116-a-s120000-f16"
+    static let containerSHA256 = "14ee9ea42746bc0b6333e5174aa385b2e3ed81fbf444ddca0354b13aec5db4ef"
+    static let modelDescription = "uiui S2 · Neural Engine · on device"
     static var directory: URL { ModelStore.directory(for: .phonon) }
     static var speechActivityURL: URL { directory.appendingPathComponent("SpeechActivity.mlmodelc", isDirectory: true) }
     static var isInstalled: Bool { isInstalled(at: directory) }

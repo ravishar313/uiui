@@ -2,6 +2,27 @@
 
 Technical report, 31 October 2026. Model revision `full-1029-s16000-f16`.
 
+## Update, 19 November 2026: uiui S2
+
+uiui S2 (revision `pl-1116-a-s120000-f16`) replaces S1 in the app. Same architecture, size and speed; only the weights changed.
+
+**How.** We built a stronger offline labeller and used it to transcribe more audio than we have human transcripts for. The labeller is a Qwen3-8B LoRA that reads S1's and Qwen3-ASR-1.7B's transcripts of a clip and writes the merged transcript; it was trained only on training-manifest pairs. On the held-out dev-hold set it scores S 10.74 against S1's 14.35. It labelled 4,800 hours: the existing 2,300-hour training pool and 2,500 hours of new NPTEL2020 lecture audio. Clips from evaluation speakers, transcripts matching evaluation references and labels that disagreed badly with both inputs were removed. S1 was then trained for 120,000 more steps on human transcripts (50%), relabelled pool audio (30%) and the new NPTEL audio (20%), keeping 4-bit quantisation-aware training.
+
+| Word error rate %, lower is better | uiui S1 | uiui S2 | Change |
+|---|---|---|---|
+| Selection score S, dev-hold (run once) | 14.35 | **13.74** | -0.62 (95% CI -0.82 to -0.41) |
+| Indian English (dev-hold) | 10.43 | **9.92** | -0.51 |
+| Hinglish (dev-hold) | 20.02 | **19.06** | -0.96 |
+| Workplace dictation (dev-hold) | 15.12 | **14.79** | -0.33 (noise) |
+| Hindi spoken, Roman output (dev-hold) | 25.19 | **24.08** | -1.11 |
+| Native English (dev-hold) | 3.87 | **3.78** | -0.09 (noise) |
+| MUCS Hinglish test subset | 41.31 | **38.80** | -2.51 |
+| Hindi accents subset | 28.93 | **27.45** | -1.48 |
+| FLEURS Hindi subset | 30.31 | **29.16** | -1.15 |
+| Svarah / Monsoon / LibriSpeech / FLEURS en | 12.94 / 7.01 / 2.24 / 6.40 | 12.73 / 6.89 / 2.30 / 6.60 | within noise |
+
+The gain is real but modest: the labeller is 25% better than S1, the retrained 0.6B 4-bit model only about 4%. Two variants did no better: keeping only human transcripts on existing audio (Hinglish did not improve), and a doubled learning rate with more pseudo-labels (same level, reached sooner). The rest of this report describes S1 and still applies to S2 except where the table above differs. The NPTEL licence question in section 9 now covers more data.
+
 ## Summary
 
 uiui is a macOS dictation app. We set out to build the best on-device speech model for English-first Indian professionals: Indian English, Hinglish written in Roman script, and workplace vocabulary.
@@ -138,7 +159,8 @@ Public test subsets of 150 clips each, on an Apple M5 Pro. Word error rate %. Di
 
 | Model | Svarah | Monsoon | LibriSpeech | FLEURS en | MUCS | Hindi accents | FLEURS hi | Disk |
 |---|---|---|---|---|---|---|---|---|
-| **uiui S1 (ours)** | 12.94 | 7.01 | 2.24 | 6.40 | **41.31** | 28.93 | 30.31 | 0.38 GB |
+| **uiui S2 (ours)** | 12.73 | 6.89 | 2.30 | 6.60 | **38.80** | 27.45 | 29.16 | 0.38 GB |
+| uiui S1 (previous) | 12.94 | 7.01 | 2.24 | 6.40 | 41.31 | 28.93 | 30.31 | 0.38 GB |
 | Phonon-2 original | 18.86 | 8.01 | 2.43 | 7.27 | 87.54 | 77.94 | 88.76 | 0.33 GB |
 | Parakeet v3 (fp32) | 16.59 | 6.98 | 2.27 | 4.56 | 87.17 | 77.70 | 90.27 | 2.5 GB |
 | Whisper large-v3 auto | 12.5 | 5.8 | 3.0 | 4.2 | 70.4 | 39.7 | 37.5 | 3.1 GB |

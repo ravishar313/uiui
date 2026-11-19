@@ -20,7 +20,7 @@ final class NativeSpeechAudioSession: SpeechAudioSession, @unchecked Sendable {
             if #available(macOS 15.0, *) {
                 descriptor = SpeechModelSessionDescriptor(directory: PhononSpeechModel.directory,
                     isInstalled: { PhononSpeechModel.isInstalled }, modelDescription: PhononSpeechModel.modelDescription,
-                    setupMessage: "uiui’s speech model (uiui S1) is missing. Reinstall the complete app bundle.")
+                    setupMessage: "uiui’s speech model (uiui S2) is missing. Reinstall the complete app bundle.")
             } else { descriptor = .parakeet }
             let parakeet = ParakeetSpeechAudioSession(configuration: configuration, decoder: LocalSpeechModel.makeDecoder(vocabulary: configuration.vocabulary), descriptor: descriptor)
             do { try await parakeet.prepare(lease: lease) }

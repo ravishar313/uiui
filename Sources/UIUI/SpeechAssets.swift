@@ -15,7 +15,7 @@ enum SpeechAssets {
             try await ModelStore.ensureInstalled(progress: progress, fraction: fraction)
             fraction?(nil)
             if #available(macOS 15.0, *) {
-                progress?("Checking the uiui S1 speech model…")
+                progress?("Checking the uiui S2 speech model…")
                 try await Task.detached(priority: .userInitiated) { try PhononSpeechModel.verify(at: PhononSpeechModel.directory) }.value
             } else if !ParakeetSpeechModel.isInstalled { try await prepareParakeet(progress: progress, fraction: fraction) }
             try await LocalCleanupModel.prepare(progress: progress)

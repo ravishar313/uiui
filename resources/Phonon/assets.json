@@ -1,7 +1,7 @@
 {
-  "repository": "uiui/S1",
-  "revision": "full-1029-s16000-f16",
-  "container_sha256": "1ebefdb308a1b4f4b3fd8df86b1340cb6934b4c935f4c97386ba7119c07ff249",
+  "repository": "uiui/S2",
+  "revision": "pl-1116-a-s120000-f16",
+  "container_sha256": "14ee9ea42746bc0b6333e5174aa385b2e3ed81fbf444ddca0354b13aec5db4ef",
   "files": [
     {
       "path": "LICENSE-CODE-Apache-2.0.txt",
@@ -20,13 +20,13 @@
     },
     {
       "path": "NOTICE",
-      "bytes": 4866,
-      "sha256": "edd52e81f3ce491e5ed37e21fbb10c51880b98c8fea463fe02b52c7223a1c5ce"
+      "bytes": 5244,
+      "sha256": "01203483941c23476dba6fce600482dec91e90275cce64be7776b4f61ee8d381"
     },
     {
       "path": "Phonon-2.mlmodelc/analytics/coremldata.bin",
       "bytes": 243,
-      "sha256": "316a4ac14e91335a15602edf92ee54c29d8f3b09e7643c4ab06f9426c3f975e8"
+      "sha256": "195c7e2d0ce62297b9fb53793643ac19f7d3efd88b8598616292a5470f5f78e4"
     },
     {
       "path": "Phonon-2.mlmodelc/coremldata.bin",
@@ -41,22 +41,22 @@
     {
       "path": "Phonon-2.mlmodelc/weights/weight.bin",
       "bytes": 351027072,
-      "sha256": "17dcef379f1f69b9415eb47fec53919387dc0aa022410a90686799c5ac136600"
+      "sha256": "76cacac8140437940593d93323b0014a968e989d5085a7e5f4809e35db2de138"
     },
     {
       "path": "README.md",
-      "bytes": 1051,
-      "sha256": "ff7c3af06e307fe32953e7e227047a34e297d7e8ef5fe701595de868574a7801"
+      "bytes": 1123,
+      "sha256": "76e3a8f9b35793018f3372981365ee688ebd621ad49c863cec2494a1db411178"
     },
     {
       "path": "decoder.bin",
       "bytes": 35062587,
-      "sha256": "ec46a24ad235e2e8e52370cd60dcc97dc704162726b60f691f386894417da460"
+      "sha256": "c59572e89257b695810509e424aba217ceb19f9998197b7266428fb1892b4425"
     },
     {
       "path": "manifest.json",
       "bytes": 1835,
-      "sha256": "c4058d8ee5233ca4b95eca07f4fd238ffa1c3e4556dae0cc50c013148ee39133"
+      "sha256": "6c5e41d421b5118561fd9d4a1628dfb425bea1c860d2d93fc610a40401cf1c10"
     },
     {
       "path": "SpeechActivity-LICENSE.txt",

@@ -44,15 +44,17 @@ and SPGISpeech, used under Kensho's public terms
     https://datasets.kensho.com/datasets/spgispeech
 
 ================================================================================
-UIUI S1 (revision full-1029-s16000-f16)
+UIUI S2 (revision pl-1116-a-s120000-f16)
 ================================================================================
 
 The bundled weights are a further modification of Phonon-2 by the uiui project:
 all encoder linear layers were re-trained with 4-bit quantisation-aware training
 (16-entry floating-point lookup tables per 16 output rows), and the decoder is
-stored as uncompressed 16-bit floating point. Statements above about five-value
+stored as uncompressed 16-bit floating point. uiui S2 continues uiui S1 training on
+the datasets below plus machine-generated transcripts (pseudo-labels) of the same
+audio and of further NPTEL2020 lecture audio. Statements above about five-value
 palettes and a 6-bit decoder describe the upstream package, not these weights.
-uiui S1 weights are distributed under CC-BY-SA-4.0 as a cautious choice because
+uiui S2 weights are distributed under CC-BY-SA-4.0 as a cautious choice because
 share-alike data was used in training. This licence does not settle the upstream
 or data terms listed below; see section 9 of docs/technical-report.md.
 
@@ -68,6 +70,10 @@ Additional training data, as stated by each publisher:
     LibriSpeech (OpenSLR 12) ........................... CC-BY-4.0
     MUSAN noise and speech ............................. public domain / CC-BY-3.0
     RIRS_NOISES simulated rooms ........................ Apache-2.0
+
+Pseudo-labels were produced offline by Qwen3-ASR-1.7B (Apache-2.0) and a Qwen3-8B
+(Apache-2.0) LoRA that merges its transcript with uiui S1's. No evaluation clips or
+evaluation speakers were used for training.
 
 Synthetic workplace speech was generated with Indic Parler-TTS (Apache-2.0) from
 text written for this project. See docs/technical-report.md in the uiui source.

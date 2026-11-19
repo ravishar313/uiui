@@ -1,7 +1,7 @@
-Selected speech model (macOS 15+): uiui S1, Indian English + Hinglish fine-tune of Phonon-2 Core ML (full-1029 step 16000, 4-bit encoder, float16 decoder)
-Repository: uiui/S1 (base: FermionResearch/Phonon-2-CoreML 48af304c8db8bcc25307c206c199612f48479954)
-Revision: full-1029-s16000-f16
-Container SHA256: 1ebefdb308a1b4f4b3fd8df86b1340cb6934b4c935f4c97386ba7119c07ff249
+Selected speech model (macOS 15+): uiui S2, Indian English + Hinglish fine-tune of Phonon-2 Core ML (uiui S1 retrained on pseudo-labelled speech, run pl-1116-a step 120000, 4-bit encoder, float16 decoder)
+Repository: uiui/S2 (base: FermionResearch/Phonon-2-CoreML 48af304c8db8bcc25307c206c199612f48479954)
+Revision: pl-1116-a-s120000-f16
+Container SHA256: 14ee9ea42746bc0b6333e5174aa385b2e3ed81fbf444ddca0354b13aec5db4ef
 Native runtime: phonon-coreml 1.1.2 / bf59e574639b060e30ee1a3f9c0e003fed5744c8
 Core ML cpuAndNeuralEngine, single loaded 15-second function; one decoder worker and one encoder in-flight.
 Models shipped precompiled and hash-verified; capture never compiles or downloads.

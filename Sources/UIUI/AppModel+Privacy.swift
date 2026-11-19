@@ -54,14 +54,14 @@ enum SpeechLanguageOptions {
     /// Other languages, with honest labels for which engine hears them.
     static func others(including current: String) -> [Option] {
         var list = [
-            Option(locale: "en-US", title: "English (US) · uiui S1"),
-            Option(locale: "en-GB", title: "English (UK) · uiui S1"),
+            Option(locale: "en-US", title: "English (US) · uiui S2"),
+            Option(locale: "en-GB", title: "English (UK) · uiui S2"),
             Option(locale: "hi-IN", title: "Hindi · Apple on-device speech")
         ]
         let known = Set(list.map(\.locale) + [defaultLocale])
         if !known.contains(current) {
             let name = Locale.current.localizedString(forIdentifier: current) ?? current
-            let engine = LocalSpeechModel.supports(locale: current) ? "uiui S1" : "Apple on-device speech"
+            let engine = LocalSpeechModel.supports(locale: current) ? "uiui S2" : "Apple on-device speech"
             list.append(Option(locale: current, title: "\(name) · \(engine)"))
         }
         return list
@@ -69,10 +69,10 @@ enum SpeechLanguageOptions {
 
     static func detail(for locale: String) -> String {
         if locale == defaultLocale {
-            return "uiui S1 hears English and Hinglish (Hindi in English letters) on this Mac."
+            return "uiui S2 hears English and Hinglish (Hindi in English letters) on this Mac."
         }
         if LocalSpeechModel.supports(locale: locale) {
-            return "uiui S1 hears English on this Mac. It works the same as English + Hinglish."
+            return "uiui S2 hears English on this Mac. It works the same as English + Hinglish."
         }
         return "Apple’s on-device speech hears this language. macOS may download its language data once."
     }

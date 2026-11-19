@@ -16,9 +16,9 @@ def verify(directory):
     manifest = directory / 'assets.json'
     require(manifest.is_file() and 0 < manifest.stat().st_size <= 1048576)
     assets = json.loads(manifest.read_text())
-    require(assets['repository'] == 'uiui/S1')
-    require(assets['revision'] == 'full-1029-s16000-f16')
-    require(assets['container_sha256'] == '1ebefdb308a1b4f4b3fd8df86b1340cb6934b4c935f4c97386ba7119c07ff249')
+    require(assets['repository'] == 'uiui/S2')
+    require(assets['revision'] == 'pl-1116-a-s120000-f16')
+    require(assets['container_sha256'] == '14ee9ea42746bc0b6333e5174aa385b2e3ed81fbf444ddca0354b13aec5db4ef')
     files = assets['files']
     require(isinstance(files, list) and 5 <= len(files) <= 32)
     paths = [item['path'] for item in files]
