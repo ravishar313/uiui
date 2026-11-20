@@ -69,6 +69,9 @@ enum NotchNativeDrawing {
         var drop: Double
         /// Horizontal drift in points, mirrored between the eyes.
         var drift: Double
+        /// 0 is the pill. Toward +1 the pill gives way to a happy closed arc (the shape
+        /// of ^); toward -1 it gives way to a single drooping arc (the shape of a U).
+        var arc: Double = 0
     }
 
     static func eyePose(phase: NotchFeedbackPhase, time: Double, progress: Double, audio: Double,
@@ -95,11 +98,11 @@ enum NotchNativeDrawing {
         case .dispatched:
             let close = NotchMosaicMetrics.smooth(min(1, progress / 0.55))
             pose.open = 1 - 0.93 * close
-            pose.drop = 0.6 * close
+            pose.arc = close
         case .cancelled:
-            pose.open = 1 - 0.4 * p
-            pose.droop = 0.62 * p
-            pose.drop = 2.4 * p
+            pose.open = 1 - 0.7 * p
+            pose.arc = -p
+            pose.drop = 1.2 * p
         case .copied, .needsInput:
             pose.open = 0.92; pose.droop = -0.3
         case .success, .message:
@@ -108,6 +111,17 @@ enum NotchNativeDrawing {
             pose.open = 0.0
         }
         return pose
+    }
+
+    /// A closed eye: ^ when happy, a U when it droops. Centred on the origin.
+    static func expressionArc(happy: Bool) -> Path {
+        let half: CGFloat = 5.6, rise: CGFloat = 4.4
+        let sign: CGFloat = happy ? -1 : 1
+        var path = Path()
+        path.move(to: CGPoint(x: -half, y: -sign * rise * 0.5))
+        path.addQuadCurve(to: CGPoint(x: half, y: -sign * rise * 0.5),
+                          control: CGPoint(x: 0, y: sign * rise * 1.5))
+        return path
     }
 
     private static func drawEyes(in context: inout GraphicsContext, geometry: NotchMosaicGeometry, input: Input) {
@@ -122,6 +136,7 @@ enum NotchNativeDrawing {
         let rest: CGFloat = min(15, max(8, header * 0.4))
         let height = max(2.4, rest * CGFloat(pose.open))
         let cy = header / 2 + CGFloat(pose.drop)
+        let arcAmount = abs(pose.arc)
         for (index, cx) in centers.enumerated() {
             let side: CGFloat = index == 0 ? -1 : 1
             var eye = context
@@ -130,9 +145,19 @@ enum NotchNativeDrawing {
             eye.rotate(by: .radians(Double(side) * pose.droop))
             let rect = CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
             let radius = min(width, height) / 2
-            eye.fill(Path(roundedRect: rect, cornerRadius: radius), with: .color(input.tint))
+            if arcAmount < 0.5 {
+                var pill = eye
+                pill.opacity *= 1 - arcAmount * 2
+                pill.fill(Path(roundedRect: rect, cornerRadius: radius), with: .color(input.tint))
+            }
+            if arcAmount > 0.001 {
+                var arc = eye
+                arc.opacity *= min(1, arcAmount * 2)
+                arc.stroke(expressionArc(happy: pose.arc > 0), with: .color(input.tint),
+                           style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+            }
             // The logo's small catchlight keeps the pills looking like eyes, not bars.
-            if height > 7 {
+            if height > 7, arcAmount < 0.001 {
                 let dot = CGRect(x: width * 0.06, y: -height / 2 + height * 0.1, width: 1.7, height: 1.7)
                 eye.fill(Path(ellipseIn: dot), with: .color(.black.opacity(0.85)))
             }

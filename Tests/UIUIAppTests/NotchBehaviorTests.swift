@@ -166,12 +166,12 @@ final class NotchLayoutExtrasTests: XCTestCase {
 }
 
 final class NotchNativeStylesTests: XCTestCase {
-    func testRetiredStylesFallBackToMosaic() throws {
+    func testRetiredStylesFallBackToEyes() throws {
         XCTAssertEqual(NotchVisualStyle.allCases, [.mosaic, .eyes, .bars, .words])
         for value in ["liquid", "ribbon", "future", ""] {
             let data = try JSONSerialization.data(withJSONObject: ["notchVisualStyle": value, "quietMode": true])
             let restored = try JSONDecoder().decode(UIUISettings.self, from: data)
-            XCTAssertEqual(restored.notchVisualStyle, .mosaic)
+            XCTAssertEqual(restored.notchVisualStyle, .eyes)
             XCTAssertTrue(restored.quietMode)
         }
         XCTAssertEqual(NotchVisualStyle(stored: "bars"), .bars)
@@ -198,7 +198,9 @@ final class NotchNativeStylesTests: XCTestCase {
         XCTAssertGreaterThan(pose(.recording, audio: 1).open, pose(.recording, audio: 0).open, "Eyes grow with the voice")
         XCTAssertLessThan(pose(.processing).open, 0.4, "Squint while processing")
         XCTAssertLessThan(pose(.dispatched, progress: 1).open, 0.1, "Closed on send")
-        XCTAssertGreaterThan(pose(.cancelled, progress: 1).droop, 0.5, "Droop on cancel")
+        XCTAssertEqual(pose(.dispatched, progress: 1).arc, 1, accuracy: 0.001, "Happy arc held on send")
+        XCTAssertEqual(pose(.cancelled, progress: 1).arc, -1, accuracy: 0.001, "Droop arc on cancel")
+        XCTAssertEqual(pose(.recording).arc, 0)
         XCTAssertGreaterThan(pose(.recording, glance: 1).drop, pose(.recording, glance: 0).drop, "Glance toward the text")
         XCTAssertLessThan(pose(.recording, paused: true).open, 0.4)
     }
@@ -386,8 +388,9 @@ final class NotchPauseTests: XCTestCase {
         XCTAssertTrue(model.isVoicePaused)
         XCTAssertEqual(model.voiceStatusSummary, "Paused · not transcribing")
         XCTAssertTrue(model.microphoneIsActive, "The microphone is still open while paused; the text must not claim otherwise")
-        XCTAssertEqual(StatusMenuController.symbolName(paused: model.isVoicePaused, active: model.microphoneIsActive), "pause.circle.fill")
-        XCTAssertEqual(StatusMenuController.symbolName(paused: false, active: true), "mic.fill")
+        XCTAssertEqual(StatusMenuController.eyeState(paused: model.isVoicePaused, active: model.microphoneIsActive), .paused)
+        XCTAssertEqual(StatusMenuController.eyeState(paused: false, active: true), .listening)
+        XCTAssertEqual(StatusMenuController.eyeState(paused: false, active: false), .resting)
         model.resumeVoiceCapture()
         XCTAssertEqual(model.voiceStatusSummary, "Recording")
     }

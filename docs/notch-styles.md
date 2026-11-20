@@ -4,12 +4,12 @@ Choose a visual in **Settings → Appearance → Notch style**. The three compac
 
 | Style | Appearance |
 | --- | --- |
-| Mosaic | Fine tiles moving together, with voice-responsive illumination. The default; its drawing is unchanged. |
-| Eyes | The uiui logo's two rounded-pill eyes, one each side of the camera, in the accent colour. They grow with the real voice level, blink occasionally, glance down toward the text, squint while processing, close on send and droop on cancel. |
+| Mosaic | Fine tiles moving together, with voice-responsive illumination. Its drawing is unchanged. |
+| Eyes | The default and uiui's signature: "a quiet face in your notch". The logo's two rounded-pill eyes, one each side of the camera (the camera is the bridge of the nose), in the accent colour. They grow with the real voice level, blink occasionally, glance down toward the text and squint while processing. On send the pills close into a happy arc (^ ^) held for the sent state; on cancel they become a single downward arc (a U) and fold away. The amber "can't hear you" state tilts them with worry. The menu-bar icon is the same two eyes: closed lines at rest, open pills while listening, closed lines with a pause cue while paused. |
 | Voice bars | Nine thin rounded bars each side of the camera, driven by the smoothed real level with a 45 ms delay per bar. A shimmer travels outward while processing; the bars settle to baseline on send. |
 | Words first | The live transcript is the visual: slightly larger text scrolling left, plus a thin line along the lower edge (breathing with the voice, sweeping while processing, one confirming sweep on send). |
 
-Liquid and Ribbon were removed. Stored `liquid`, `ribbon` or unknown values load as Mosaic and keep every other preference.
+Liquid and Ribbon were removed. Missing, `liquid`, `ribbon` or unknown stored values load as Eyes and keep every other preference. Anyone who stored a valid style (including Mosaic) keeps it.
 
 In every style, the newest words in the transcript appear in the accent colour and fade to white over five words.
 
@@ -30,7 +30,7 @@ Every style covers starting, listening, processing, queued, send, cancellation a
 
 ## Implementation and compatibility
 
-`UIUISettings.notchVisualStyle` stores a `NotchVisualStyle` string in the existing settings payload. Missing, unrecognized and malformed style values fall back to Mosaic while retaining other preferences and dictionary entries. Normal settings observation persists choices; no second preference store or OS side-effect owner is added.
+`UIUISettings.notchVisualStyle` stores a `NotchVisualStyle` string in the existing settings payload. Missing, unrecognized and malformed style values fall back to Eyes while retaining other preferences and dictionary entries. Normal settings observation persists choices; no second preference store or OS side-effect owner is added.
 
 One persistent `NotchVisualFeedback` owns the existing TimelineView, Canvas, camera mask and audio smoothing. Mosaic retains its existing drawing; Eyes, Voice bars and the Words line use a few rounded paths in that Canvas (`NotchNativeStyles.swift`), and Words first draws its text in the transcript row. Steady fields use 30 Hz; short phase handoffs and send/cancel gestures use 60 Hz, with no idle recurring frames and the same receipt lifecycle. The three Settings previews have fixed progress and no active animation schedule. No model, network request, image, shader, web runtime or new dependency is added.
 

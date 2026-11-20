@@ -47,16 +47,56 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return String(flat.prefix(recentTitleLimit - 1)).trimmingCharacters(in: .whitespaces) + "…"
     }
 
-    static func symbolName(paused: Bool, active: Bool) -> String { paused ? "pause.circle.fill" : active ? "mic.fill" : "eyes" }
+    /// The menu-bar face: uiui's two eyes, closed at rest, open while listening.
+    enum EyeState: CaseIterable { case resting, listening, paused }
+
+    static func eyeState(paused: Bool, active: Bool) -> EyeState { paused ? .paused : active ? .listening : .resting }
+
+    private static let eyeImages: [EyeState: NSImage] = Dictionary(uniqueKeysWithValues: EyeState.allCases.map { ($0, drawEyes($0)) })
+
+    /// Cached template image for a state; built once.
+    static func eyeImage(_ state: EyeState) -> NSImage { eyeImages[state] ?? drawEyes(state) }
+
+    /// One open eye in the UIUIMark proportions, with its glint punched out near the top right.
+    private static func eye(centerX x: CGFloat, height: CGFloat) {
+        let width: CGFloat = 4.2
+        let rect = NSRect(x: x - width / 2, y: 9 - height / 2, width: width, height: height)
+        NSBezierPath(roundedRect: rect, xRadius: 1.6, yRadius: 1.6).fill()
+        guard let context = NSGraphicsContext.current else { return }
+        context.saveGraphicsState()
+        context.compositingOperation = .clear
+        let glint: CGFloat = height > 6 ? 1.5 : 1.2
+        NSBezierPath(ovalIn: NSRect(x: rect.maxX - glint - 0.7, y: rect.maxY - glint - 0.9, width: glint, height: glint)).fill()
+        context.restoreGraphicsState()
+    }
+
+    private static func drawEyes(_ state: EyeState) -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            NSColor.black.setFill()
+            NSColor.black.setStroke()
+            let centers: [CGFloat] = [5.5, 12.5]
+            switch state {
+            case .listening: for x in centers { Self.eye(centerX: x, height: 8) }
+            case .paused: for x in centers { Self.eye(centerX: x, height: 4.2) }
+            case .resting:
+                for x in centers {
+                    NSBezierPath(roundedRect: NSRect(x: x - 2.6, y: 8.1, width: 5.2, height: 1.9), xRadius: 0.95, yRadius: 0.95).fill()
+                }
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 
     /// Cheap and idempotent: called whenever the app reports activity.
     func refreshState() {
         let active = model.microphoneIsActive
         if let button = statusItem.button {
-            let name = Self.symbolName(paused: model.isVoicePaused, active: active)
-            let description = "uiui, \(model.voiceStatusSummary.lowercased())"
-            button.image = NSImage(systemSymbolName: name, accessibilityDescription: description)
-            button.image?.isTemplate = true
+            let state = Self.eyeState(paused: model.isVoicePaused, active: active)
+            let image = Self.eyeImage(state)
+            if button.image !== image { button.image = image }
+            button.setAccessibilityLabel("uiui, \(model.voiceStatusSummary.lowercased())")
             button.toolTip = "uiui · \(model.voiceStatusSummary)"
         }
         statusLine.title = model.voiceStatusSummary

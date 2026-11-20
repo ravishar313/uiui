@@ -4,7 +4,7 @@ import XCTest
 @testable import UIUI
 
 final class NotchStyleSettingsTests: XCTestCase {
-    func testExistingSettingsKeepMosaicAndAllOtherPreferences() throws {
+    func testExistingSettingsKeepEyesAndAllOtherPreferences() throws {
         var fixture = UIUISettings()
         fixture.speechLocale = "en-GB"
         fixture.quietMode = true
@@ -14,12 +14,18 @@ final class NotchStyleSettingsTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture)) as? [String: Any])
         object.removeValue(forKey: "notchVisualStyle")
         let restored = try JSONDecoder().decode(UIUISettings.self, from: JSONSerialization.data(withJSONObject: object))
-        XCTAssertEqual(restored.notchVisualStyle, .mosaic)
+        XCTAssertEqual(restored.notchVisualStyle, .eyes)
         XCTAssertEqual(restored.speechLocale, "en-GB")
         XCTAssertTrue(restored.quietMode)
         XCTAssertFalse(restored.notchEnabled)
         XCTAssertEqual(restored.customProjects, fixture.customProjects)
         XCTAssertEqual(restored.vocabulary, fixture.vocabulary)
+    }
+
+    func testStoredStyleIsKept() throws {
+        let data = try JSONSerialization.data(withJSONObject: ["notchVisualStyle": "mosaic"])
+        XCTAssertEqual(try JSONDecoder().decode(UIUISettings.self, from: data).notchVisualStyle, .mosaic)
+        XCTAssertEqual(UIUISettings().notchVisualStyle, .eyes)
     }
 
     func testNotchSizeDefaultsToStandardAndRoundTrips() throws {
@@ -42,7 +48,7 @@ final class NotchStyleSettingsTests: XCTestCase {
             let data = try JSONSerialization.data(withJSONObject: ["notchVisualStyle": value,
                 "speechLocale": "hi-IN", "quietMode": true, "customProjects": ["Synthetic work"]])
             let restored = try JSONDecoder().decode(UIUISettings.self, from: data)
-            XCTAssertEqual(restored.notchVisualStyle, .mosaic)
+            XCTAssertEqual(restored.notchVisualStyle, .eyes)
             XCTAssertEqual(restored.speechLocale, "hi-IN")
             XCTAssertTrue(restored.quietMode)
             XCTAssertEqual(restored.customProjects, ["Synthetic work"])
