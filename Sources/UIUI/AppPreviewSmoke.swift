@@ -79,8 +79,8 @@ enum AppPreviewSmoke {
 
         for scheme in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
             let name = scheme.0, appearance = NSAppearance(named: scheme.1)
-            try save(render(LibraryView(model: model), size: CGSize(width: 780, height: 760), appearance: appearance), output, "home-history-\(name)")
-            try save(render(LibraryView(model: empty.model), size: CGSize(width: 780, height: 560), appearance: appearance), output, "home-new-user-\(name)")
+            try save(render(LibraryView(model: model), size: CGSize(width: 1100, height: 820), appearance: appearance), output, "home-history-\(name)")
+            try save(render(LibraryView(model: empty.model), size: CGSize(width: 1100, height: 620), appearance: appearance), output, "home-new-user-\(name)")
             try save(render(HistoryListView(model: model, initialAppFilter: "Slack").frame(maxHeight: 420).background(UIUIStyle.paper(name == "dark" ? .dark : .light)),
                             size: CGSize(width: 780, height: 420), appearance: appearance), output, "history-slack-filter-\(name)")
             try save(render(SavedTextView(model: model, item: fixedItem, startsInFixMode: true, previousFix: fix)

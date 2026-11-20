@@ -1,15 +1,132 @@
 import SwiftUI
 import UIUICore
 
-/// Home leads with the last dictation and the shortcut that makes the next one.
+/// The first thing in the notebook: the last dictation, or the live words while talking.
+/// Notices and warnings sit right under it (see `HomeNotices`).
 struct VoiceHomeView: View {
     let model: AppModel
-    var showsUsage = true
+    /// Opens a saved item in fix-a-word mode.
+    var onFix: (CaptureItem) -> Void = { _ in }
+    @Environment(\.colorScheme) private var scheme
+
     private var microphoneActive: Bool { model.microphoneIsActive }
-    private var modeAccent: Color { UIUIStyle.accent }
-    private var showingLiveTranscript: Bool {
-        !model.voiceTranscript.isEmpty && (model.voiceIsRecording || microphoneActive || model.voice.state == "finishing")
+    private var isLive: Bool { model.voiceIsRecording || microphoneActive || model.voice.state == "finishing" }
+    private var showingLiveTranscript: Bool { !model.voiceTranscript.isEmpty && isLive }
+    /// The saved item behind the last dictation, when it has been kept.
+    private var latestItem: CaptureItem? {
+        guard let latest = model.latestDictation else { return nil }
+        return model.items.filter { $0.kind == .dictation && $0.body == latest.text }.max { $0.createdAt < $1.createdAt }
     }
+
+    var body: some View {
+        card
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .uiuiCard()
+    }
+
+    @ViewBuilder private var card: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if isLive {
+                liveContent
+            } else if let latest = model.latestDictation {
+                latestContent(latest)
+            } else {
+                emptyContent
+            }
+        }.padding(.horizontal, 26).padding(.vertical, 22)
+            .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+    }
+
+    // MARK: Live
+
+    @ViewBuilder private var liveContent: some View {
+        HStack(spacing: 7) {
+            if model.isVoicePaused {
+                Image(systemName: "pause.circle.fill").font(.system(size: 11)).foregroundStyle(UIUIStyle.tint(scheme)).accessibilityHidden(true)
+            } else {
+                Circle().fill(UIUIStyle.accent).frame(width: 6, height: 6)
+            }
+            Text(model.isVoicePaused ? "Paused" : "Listening").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+        }
+        if showingLiveTranscript {
+            ScrollView {
+                liveText(model.voiceTranscript).font(UIUIStyle.words(24)).lineSpacing(6).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(maxHeight: 190)
+        } else {
+            Text(model.isVoicePaused ? "Paused. Nothing is being transcribed. Press Control-Option-P to continue."
+                 : "Start speaking. Your words appear here.")
+                .font(UIUIStyle.words(20)).foregroundStyle(.secondary).lineSpacing(5)
+        }
+    }
+
+    /// The newest few words are lime; what came before is ink.
+    private func liveText(_ transcript: String) -> Text {
+        let words = transcript.split(separator: " ", omittingEmptySubsequences: false)
+        let tailCount = min(3, words.count)
+        let head = words.dropLast(tailCount).joined(separator: " ")
+        let tail = words.suffix(tailCount).joined(separator: " ")
+        let separator = head.isEmpty ? "" : " "
+        return Text(head + separator) + Text(tail).foregroundStyle(UIUIStyle.tint(scheme))
+    }
+
+    // MARK: Last dictation
+
+    @ViewBuilder private func latestContent(_ latest: LatestDictation) -> some View {
+        Text(meta(latest)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+        Text(latest.text).font(UIUIStyle.words(24)).lineSpacing(6).lineLimit(6)
+            .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+        HStack(spacing: 8) {
+            Button { model.copyLatestDictation() } label: { Label("Copy", systemImage: "doc.on.doc") }
+                .buttonStyle(ChipButtonStyle()).disabled(!model.canCopyLatestDictation)
+                .help("Copy the last dictation").accessibilityLabel("Copy last dictation")
+            Button { if let item = latestItem { onFix(item) } } label: { Label("Fix a word", systemImage: "character.cursor.ibeam") }
+                .buttonStyle(ChipButtonStyle()).disabled(latestItem == nil)
+                .help(latestItem == nil ? "This dictation is not saved in history" : "Click a misheard word to correct it and teach uiui")
+            Button { if let item = latestItem { model.togglePin(item) } } label: {
+                Label(latestItem?.isPinned == true ? "Pinned" : "Pin", systemImage: latestItem?.isPinned == true ? "pin.fill" : "pin")
+            }.buttonStyle(ChipButtonStyle()).disabled(latestItem == nil)
+                .help(latestItem?.isPinned == true ? "Unpin this dictation" : "Keep this dictation at the top of the notebook")
+        }
+    }
+
+    private func meta(_ latest: LatestDictation) -> String {
+        var parts = ["Last dictation"]
+        if let app = latest.app, !app.isEmpty { parts.append("pasted in \(app)") }
+        if let date = latest.date { parts.append(date.formatted(.relative(presentation: .named, unitsStyle: .wide))) }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
+    // MARK: New user
+
+    @ViewBuilder private var emptyContent: some View {
+        Text("Your first dictation will show up here.").font(UIUIStyle.words(24)).lineSpacing(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        if model.settings.voiceTriggerEnabled {
+            HStack(spacing: 12) {
+                VoiceKeycap(key: model.settings.voiceTriggerKey)
+                Text("Click into any text field, \(shortcutVerb), and speak. Your words are typed there\(model.settings.saveDictationHistory ? " and kept in this notebook" : "").")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            }.accessibilityElement(children: .combine)
+        } else {
+            HStack(spacing: 8) {
+                Text("The voice shortcut is off.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Button("Turn on in Settings") { model.openSettings() }.buttonStyle(.link).font(.system(size: 12))
+            }
+        }
+    }
+
+    private var shortcutVerb: String {
+        let key = model.settings.voiceTriggerKey
+        let name = key == .fn ? "fn" : key.title
+        return model.settings.voiceTriggerMode == .hold ? "hold \(name)" : "tap \(name)"
+    }
+}
+
+/// Warnings and receipts that belong right under the last dictation.
+struct HomeNotices: View {
+    let model: AppModel
+    private var modeAccent: Color { UIUIStyle.accent }
     private var deliveryStatus: String? {
         guard model.activeVoiceFeedback == nil else { return nil }
         if let issue = model.dictationDeliveryIssue, !issue.isEmpty { return issue }
@@ -20,7 +137,7 @@ struct VoiceHomeView: View {
         let status = model.voiceTriggerStatus
         let normalized = status.lowercased()
         guard !status.isEmpty,
-              normalized != "shortcut ready · microphone off",
+              normalized != "shortcut ready \u{00B7} microphone off",
               normalized != "voice key is off.",
               !normalized.hasSuffix(" is ready in uiui and other apps.") else { return nil }
         return status
@@ -28,21 +145,16 @@ struct VoiceHomeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                mainCard.frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
-                shortcutCard.frame(width: 268, alignment: .topLeading)
-            }.fixedSize(horizontal: false, vertical: true)
-            if showsUsage { UsageOverview(model: model) }
             if let updater = model.updater, let release = updater.pendingNotice {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down.circle").accessibilityHidden(true)
                     Text("uiui \(release.version) is available").lineLimit(1)
                     Button("Review") { updater.presentPendingUpdate() }.buttonStyle(.borderless)
-                }.font(.system(size: 10)).foregroundStyle(.secondary)
+                }.font(.system(size: 11)).foregroundStyle(.secondary)
             }
             if let warning = model.speechEngineWarning {
                 Label(warning, systemImage: "exclamationmark.circle")
-                    .font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             if let status = deliveryStatus {
                 Label(status, systemImage: model.dictationDeliveryIssue == nil ? "text.cursor" : "exclamationmark.circle")
@@ -55,155 +167,15 @@ struct VoiceHomeView: View {
             }
             if let guidance = shortcutAccessGuidance {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(guidance).font(.system(size: 10)).foregroundStyle(.secondary).textSelection(.enabled)
-                    Button("Settings") { model.openSettings() }.buttonStyle(.borderless).font(.system(size: 10))
+                    Text(guidance).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled)
+                    Button("Settings") { model.openSettings() }.buttonStyle(.borderless).font(.system(size: 11))
                 }
             }
             if let error = model.voiceError, !error.isEmpty {
                 Label(error, systemImage: "exclamationmark.circle")
                     .font(.system(size: 11)).foregroundStyle(.orange).textSelection(.enabled)
             }
-        }
-    }
-
-    private var cardShape: RoundedRectangle { RoundedRectangle(cornerRadius: 12) }
-
-    @ViewBuilder private var mainCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if showingLiveTranscript || model.voiceIsRecording || microphoneActive {
-                HStack(spacing: 6) {
-                    if model.isVoicePaused {
-                        Image(systemName: "pause.circle.fill").font(.system(size: 11)).foregroundStyle(modeAccent).accessibilityHidden(true)
-                    } else {
-                        Circle().fill(modeAccent).frame(width: 6, height: 6)
-                    }
-                    Text(model.isVoicePaused ? "Paused" : "Listening").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                }
-                if showingLiveTranscript {
-                    ScrollView {
-                        Text(model.voiceTranscript).font(.system(size: 14)).lineSpacing(4).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }.frame(maxHeight: 96)
-                } else {
-                    Text(model.isVoicePaused ? "Paused. Nothing is being transcribed. Press Control-Option-P to continue."
-                         : "Start speaking. Your words appear here.").font(.system(size: 13)).foregroundStyle(.secondary)
-                }
-            } else if let latest = model.latestDictation {
-                HStack(spacing: 6) {
-                    Text("Last dictation").font(.system(size: 11, weight: .semibold))
-                    if let meta = latestMeta(latest) { Text("·").foregroundStyle(.tertiary); Text(meta).lineLimit(1) }
-                    Spacer(minLength: 8)
-                    Button { model.copyLatestDictation() } label: { Label("Copy", systemImage: "doc.on.doc") }
-                        .buttonStyle(.bordered).controlSize(.small)
-                        .disabled(!model.canCopyLatestDictation)
-                        .help("Copy the last dictation").accessibilityLabel("Copy last dictation")
-                }.font(.system(size: 11)).foregroundStyle(.secondary)
-                Text(latest.text).font(.system(size: 15)).lineSpacing(4).lineLimit(4)
-                    .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-            } else {
-                emptyState
-            }
-        }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(.primary.opacity(0.03), in: cardShape)
-            .overlay { cardShape.strokeBorder(.primary.opacity(0.07)) }
-    }
-
-    private func latestMeta(_ latest: LatestDictation) -> String? {
-        var parts: [String] = []
-        if let date = latest.date { parts.append(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))) }
-        if let app = latest.app, !app.isEmpty { parts.append(app) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: "waveform").font(.system(size: 20, weight: .light)).foregroundStyle(UIUIStyle.muted)
-            Text("Nothing dictated yet").font(.system(size: 15, weight: .semibold))
-            Text(model.settings.voiceTriggerEnabled
-                 ? "Click into any text field, \(shortcutVerb), and speak. Your words are typed there\(model.settings.saveDictationHistory ? " and kept in history" : "")."
-                 : "Press Dictate, then speak. Turn on the keyboard shortcut in Settings to dictate in any app.")
-                .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var shortcutVerb: String {
-        let key = model.settings.voiceTriggerKey
-        let name = key == .fn ? "fn" : key.title
-        return model.settings.voiceTriggerMode == .hold ? "hold \(name)" : "tap \(name)"
-    }
-
-    private var shortcutCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if model.settings.voiceTriggerEnabled {
-                HStack(spacing: 10) {
-                    LargeKeycap(key: model.settings.voiceTriggerKey)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(model.settings.voiceTriggerMode == .hold ? "Hold to dictate" : "Tap to dictate")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text(model.settings.voiceTriggerMode == .hold ? "Release to finish" : "Tap again to finish")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                }.accessibilityElement(children: .ignore).accessibilityLabel(triggerInstruction)
-                Text("Works in any app").font(.system(size: 11)).foregroundStyle(.secondary)
-            } else {
-                Text("Shortcut is off").font(.system(size: 14, weight: .semibold))
-                Button("Turn on in Settings") { model.openSettings() }.buttonStyle(.link).font(.system(size: 11))
-            }
-            Spacer(minLength: 0)
-            HStack(spacing: 8) {
-                if model.isVoicePaused {
-                    Image(systemName: "pause.circle.fill").font(.system(size: 10)).foregroundStyle(modeAccent).accessibilityHidden(true)
-                } else {
-                    Circle().fill(microphoneActive ? modeAccent : Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
-                }
-                Text(model.voiceStatusSummary).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                    .foregroundStyle(microphoneActive ? .primary : .secondary)
-                Spacer(minLength: 4)
-                if model.voiceIsRecording {
-                    Button("Cancel") { model.cancelTriggeredVoice() }.buttonStyle(.borderless).controlSize(.small)
-                }
-                Button {
-                    if model.voiceIsRecording { model.finishVoiceCapture() } else { model.toggleVoiceCapture() }
-                } label: {
-                    Label(model.voiceIsRecording ? "Stop" : "Dictate", systemImage: model.voiceIsRecording ? "stop.fill" : "mic")
-                }.buttonStyle(PrimaryButtonStyle(accent: modeAccent, compact: true))
-            }
-        }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(modeAccent.opacity(0.10), in: cardShape)
-            .overlay { cardShape.strokeBorder(modeAccent.opacity(0.28)) }
-    }
-
-    private var triggerInstruction: String {
-        guard model.settings.voiceTriggerEnabled else { return "Keyboard trigger is off. Enable it in Settings." }
-        let key = model.settings.voiceTriggerKey.title
-        return model.settings.voiceTriggerMode == .hold
-            ? "Hold \(key) to dictate; release to finish."
-            : "Tap \(key) to dictate. Tap again to finish."
-    }
-}
-
-/// The user's real trigger key, drawn large enough to find on the keyboard.
-struct LargeKeycap: View {
-    let key: VoiceTriggerKey
-    var body: some View {
-        HStack(spacing: 5) {
-            if key == .fn {
-                Text("fn").font(.system(size: 19, weight: .semibold, design: .rounded))
-                Image(systemName: "globe").font(.system(size: 14, weight: .medium))
-            } else if key.isModifierOnly {
-                Text(key.title.hasPrefix("Left") ? "L" : "R")
-                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-                Image(systemName: key.symbol).font(.system(size: 18, weight: .medium))
-            } else {
-                Text(key.title).font(.system(size: 19, weight: .semibold, design: .rounded))
-            }
-        }.foregroundStyle(.primary.opacity(0.85))
-            .padding(.horizontal, 12).frame(minWidth: 52, minHeight: 44)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
-            .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(.primary.opacity(0.16)) }
-            .shadow(color: .primary.opacity(0.10), radius: 0, x: 0, y: 2)
-            .fixedSize()
-            .help(key.title).accessibilityLabel(key.title)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

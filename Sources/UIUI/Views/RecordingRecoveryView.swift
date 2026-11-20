@@ -1,7 +1,7 @@
 import SwiftUI
 import UIUICore
 
-/// A small notice when unfinished recordings exist. Review opens the full list.
+/// A small card in the rail when unfinished recordings exist. Review opens the full list.
 /// Recovery actions stay explicit: opening or copying keeps the journal entry.
 struct RecordingRecoveryView: View {
     @Bindable var model: AppModel
@@ -11,19 +11,20 @@ struct RecordingRecoveryView: View {
 
     var body: some View {
         if count > 0 || model.recordingRecoveryIssue != nil {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 if count > 0 {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.uturn.backward.circle").foregroundStyle(.secondary)
-                        Text(count == 1 ? "1 unfinished recording was kept" : "\(count) unfinished recordings were kept")
-                            .font(.system(size: 12))
-                        Spacer(minLength: 8)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "arrow.uturn.backward.circle").foregroundStyle(.secondary).accessibilityHidden(true)
+                            Text(count == 1 ? "1 unfinished recording was kept" : "\(count) unfinished recordings were kept")
+                                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                        }
                         Button("Review") { showReview = true }
-                            .buttonStyle(.borderless).font(.system(size: 12, weight: .medium))
+                            .buttonStyle(ChipButtonStyle())
                             .help("Review the recognized text from unfinished recordings")
                             .accessibilityLabel("Review unfinished recordings")
-                    }.padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+                    }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                        .uiuiCard(radius: 12)
                         .accessibilityElement(children: .contain)
                 }
                 if let issue = model.recordingRecoveryIssue, !issue.isEmpty {
@@ -31,11 +32,10 @@ struct RecordingRecoveryView: View {
                         .font(.system(size: 11)).foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
-            }.padding(.horizontal, 22).padding(.bottom, 10)
-                .sheet(isPresented: $showReview) {
-                    RecordingRecoveryReview(model: model) { showReview = false }
-                }
-                .onChange(of: count) { _, newValue in if newValue == 0 { showReview = false } }
+            }.sheet(isPresented: $showReview) {
+                RecordingRecoveryReview(model: model) { showReview = false }
+            }
+            .onChange(of: count) { _, newValue in if newValue == 0 { showReview = false } }
         }
     }
 }
