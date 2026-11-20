@@ -147,6 +147,14 @@ final class SystemSetup {
         }
     }
 
+    /// The one way uiui quits itself. `applicationShouldTerminate` finishes shutdown in a
+    /// main-actor task and replies later, so `terminate` must not run inside a main-actor
+    /// job: that job would hold the main queue while AppKit waits for the reply, and uiui
+    /// would never quit (an update's relaunch then hung). Run it from the run loop instead.
+    static func quit() {
+        RunLoop.main.perform(inModes: [.common]) { NSApplication.shared.terminate(nil) }
+    }
+
     /// Opens a fresh instance after this one quits normally, so shutdown still
     /// flushes recovery data and only one copy owns the shortcut and notch.
     @discardableResult
@@ -160,7 +168,7 @@ final class SystemSetup {
         helper.standardError = FileHandle.nullDevice
         do {
             try helper.run()
-            NSApplication.shared.terminate(nil)
+            Self.quit()
             return true
         } catch {
             lastIssue = "uiui couldn’t restart itself. Quit uiui from the menu bar and open it again."

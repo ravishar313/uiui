@@ -278,7 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSetupGuide: { [weak self] in self?.model.openOnboarding() },
             checkForUpdates: { [weak self] in self?.updater.checkNow() },
             reviewUpdate: { [weak self] in self?.updater.presentPendingUpdate() },
-            quit: { NSApplication.shared.terminate(nil) }))
+            quit: { SystemSetup.quit() }))
     }
     private func configureVoiceTrigger() {
         // The recorder in Settings or setup owns key presses while it listens.
@@ -355,6 +355,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func settings() { model.openSettings() }
     @objc private func onboarding() { model.openOnboarding() }
     @objc private func checkForUpdates() { updater.checkNow() }
-    @objc private func quit() { NSApplication.shared.terminate(nil) }
+    @objc private func quit() { SystemSetup.quit() }
     @objc private func about() { NSApplication.shared.orderFrontStandardAboutPanel(options: [.applicationName: "uiui", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "", .credits: NSAttributedString(string: "Dictation, history and recovery.\nNative. Local. Ready when you are.")]) }
 }
