@@ -64,13 +64,13 @@ enum NotchVisualStyle: String, Codable, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .mosaic: "Fine tiles, flowing together."
-        case .eyes: "The uiui eyes, listening and blinking."
+        case .eyes: "The two uiui eyes: listening, blinking, closing happy when sent."
         case .bars: "Thin bars that follow your voice."
         case .words: "Your words are the show."
         }
     }
-    /// Retired and unknown stored values fall back to Mosaic.
-    init(stored raw: String?) { self = raw.flatMap(Self.init(rawValue:)) ?? .mosaic }
+    /// Missing, retired and unknown stored values fall back to Eyes, the default.
+    init(stored raw: String?) { self = raw.flatMap(Self.init(rawValue:)) ?? .eyes }
 }
 
 /// How much room the notch takes beside the camera. The part over the camera
@@ -98,7 +98,7 @@ enum NotchSize: String, Codable, CaseIterable, Identifiable {
 
 struct UIUISettings: Codable {
     var notchEnabled = true
-    var notchVisualStyle: NotchVisualStyle = .mosaic
+    var notchVisualStyle: NotchVisualStyle = .eyes
     var notchSize: NotchSize = .standard
     var voiceTriggerEnabled = true
     var voiceTriggerKey: VoiceTriggerKey = .fn
@@ -142,7 +142,7 @@ struct UIUISettings: Codable {
         // deliberately ignored: upgrading can never reopen the microphone.
         notchEnabled = try values.decodeIfPresent(Bool.self, forKey: .notchEnabled) ?? true
         // A future, missing or malformed style must not discard other saved
-        // preferences or dictionary entries when falling back to current Mosaic.
+        // preferences or dictionary entries when falling back to the current default, Eyes.
         notchVisualStyle = NotchVisualStyle(stored: try? values.decode(String.self, forKey: .notchVisualStyle))
         notchSize = (try? values.decode(String.self, forKey: .notchSize)).flatMap(NotchSize.init(rawValue:)) ?? .standard
         voiceTriggerEnabled = try values.decodeIfPresent(Bool.self, forKey: .voiceTriggerEnabled) ?? true
