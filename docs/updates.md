@@ -1,12 +1,12 @@
 # Updates
 
-uiui updates itself from GitHub Releases on a public repository (`UIUIUpdateRepository` in `resources/Info.plist`, currently `ravishar313/uiui`). The app and its speech models are released separately, so an app update never re-downloads models.
+uiui updates itself from GitHub Releases on a public repository (`UIUIUpdateRepository` in `resources/Info.plist`, currently `ravishar313/uiui`). The app and its speech models are released separately, so an app update never re-downloads models. Model packs are also mirrored on Hugging Face (`UIUIModelHuggingFaceRepository`, currently `ravishar313/uiui-models`), which the app tries first because GitHub release downloads can be throttled to well under 1 MB/s.
 
 ## Cutting an app release
 
 1. Bump `CFBundleShortVersionString` (dotted numbers, for example `1.2.0`) and `CFBundleVersion` in `resources/Info.plist`.
 2. Run `scripts/package-release.sh`. It builds an app-only bundle (`build-app.sh --without-models`, about 14 MB), zips it as `build/release-<version>/uiui-<version>-arm64.zip`, writes `<zip>.sha256`, and checks the zip extracts to a bundle with a valid signature. Without `--publish` it only prints what it would upload.
-3. Publish: `scripts/package-release.sh --publish --notes notes.md` creates release `v<version>` with both files. It refuses to publish if a model pack the build needs is not yet released. The release always includes the lite installer disk image for new users.
+3. Publish: `scripts/package-release.sh --publish --notes notes.md` creates release `v<version>` with both files. It refuses to publish if a model pack the build needs is not yet released on GitHub with the pinned size and hash, or not on Hugging Face under its tag with the pinned size and SHA-256. The release always includes the lite installer disk image for new users.
 
 The full app with bundled models (for a DMG or a first install) is still `scripts/build-app.sh`.
 
@@ -15,9 +15,20 @@ The full app with bundled models (for a DMG or a first install) is still `script
 `resources/ModelPacks.json` lists the packs one build needs: name, id, archive name, SHA-256 and size. The id is the first 12 hex characters of the SHA-256 of the pack's manifest (`assets.json` for Phonon, `manifest.json` for MiniLM). `build-app.sh` copies the file into the app, where the code signature seals it, and refuses to build if an id no longer matches `resources/Phonon` or `resources/MiniLM`.
 
 - Packs install once to `~/Library/Application Support/uiui/Models/<Name>-<id>/`. At runtime the app uses its bundled copy if the manifest id matches, otherwise the stored copy.
-- `scripts/package-models.sh` builds `build/model-packs/uiui-model-<name>-<id>.aar`, an LZMA Apple Archive (byte-stable for the same files; unpacked by the app with macOS's `/usr/bin/aa`) and rewrites `ModelPacks.json`. With `--publish` it creates one release per pack that is not yet published, tagged `models-<name>-<id>`, in the same repository. Publish packs before the app release that needs them.
+- `scripts/package-models.sh` builds `build/model-packs/uiui-model-<name>-<id>.aar`, an LZMA Apple Archive (byte-stable for the same files; unpacked by the app with macOS's `/usr/bin/aa`) and rewrites `ModelPacks.json`. With `--publish` it creates one release per pack that is not yet published, tagged `models-<name>-<id>`, in the same repository, then uploads the same archive to the Hugging Face model repository and tags that commit `models-<name>-<id>` too. An already-published pack is reused byte for byte (from `build/model-packs` when its hash matches the GitHub asset, otherwise downloaded). The `hf` CLI must be logged in beforehand (`hf auth login`); the script never passes a token. Publish packs before the app release that needs them.
 - A pack changes only when the model changes. A new model gives a new id and a new tag; the old tag stays, and installed apps keep their pack until they update to the app that needs the new one. After an app needs a new pack, older stored packs are removed.
 - Commit the updated `ModelPacks.json` together with the model change.
+
+## Model download sources and trust
+
+For a missing pack the app tries, in order:
+
+1. `https://huggingface.co/<UIUIModelHuggingFaceRepository>/resolve/models-<name>-<id>/<archive>`, pinned to the per-pack tag rather than `main`, so later commits to the repository never change what an app version fetches.
+2. `https://github.com/<UIUIUpdateRepository>/releases/download/models-<name>-<id>/<archive>`.
+
+Each source is fetched with six parallel ranges when a one-byte probe gets `206` with the full size in `Content-Range`, otherwise as one stream. Any failure, wrong size or wrong SHA-256 discards the file and moves on to the next source; cancelling stops. The only trust anchor is the archive SHA-256 and size in the signed `ModelPacks.json`, followed by the per-file hashes in the pack's manifest. Hosts are a second line of defence: model packs may start on or redirect to github.com, objects.githubusercontent.com, release-assets.githubusercontent.com, huggingface.co, `*.huggingface.co` or `*.hf.co` (Hugging Face's CDN, for example `us.aws.cdn.hf.co`), over https only. App update zips accept only the three GitHub hosts.
+
+Both repository names come from the signed `Info.plist`, so only versions built with this setting use Hugging Face; older versions keep downloading from GitHub, which must keep every pack release.
 
 ## What the app verifies
 

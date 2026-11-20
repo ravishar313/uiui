@@ -69,8 +69,13 @@ enum ModelStore {
         return false
     }
 
-    static var repository: String? {
-        (Bundle.main.object(forInfoDictionaryKey: "UIUIUpdateRepository") as? String).flatMap { ModelPack.isValidRepository($0) ? $0 : nil }
+    static var repository: String? { infoRepository("UIUIUpdateRepository") }
+
+    /// Hugging Face model repository that mirrors the GitHub pack releases; tried first.
+    static var huggingFaceRepository: String? { infoRepository("UIUIModelHuggingFaceRepository") }
+
+    private static func infoRepository(_ key: String) -> String? {
+        (Bundle.main.object(forInfoDictionaryKey: key) as? String).flatMap { ModelPack.isValidRepository($0) ? $0 : nil }
     }
 
     /// Installs everything the running app needs; no-op when nothing is missing.
@@ -98,10 +103,14 @@ enum ModelStore {
             progress?("Copying \(pack.name) model…")
             try fileManager.copyItem(at: resources.appendingPathComponent(kind.rawValue, isDirectory: true), to: staged)
         } else {
-            guard let repository, let url = pack.downloadURL(repository: repository) else { throw Failure(message: "This build has no model download source.") }
+            let sources = pack.downloadSources(repository: repository, huggingFace: huggingFaceRepository)
+            guard !sources.isEmpty else { throw Failure(message: "This build has no model download source.") }
             let archive = temp.appendingPathComponent(pack.archive)
             progress?("Downloading \(pack.name) model · \(pack.bytes / 1_000_000) MB, once…")
-            try await download(url, to: archive, pack: pack, progress: progress, fraction: fraction)
+            let reporter = DownloadReporter(label: pack.name, total: pack.bytes, report: progress, fraction: fraction)
+            try await download(from: sources, to: archive, pack: pack, reporter: reporter) { url in
+                try await fetch(url, to: archive, pack: pack, reporter: reporter)
+            }
             fraction?(nil)
             progress?("Unpacking \(pack.name) model…")
             let extracted = temp.appendingPathComponent("extracted", isDirectory: true)
@@ -204,22 +213,44 @@ enum ModelStore {
         guard process.terminationStatus == 0 else { throw Failure(message: "The model download could not be unpacked.") }
     }
 
-    private static func download(_ url: URL, to destination: URL, pack: ModelPack, progress: Progress?, fraction: Fraction?) async throws {
-        guard UpdateRelease.isTrustedDownload(url) else { throw Failure(message: "The model download address is not trusted.") }
-        let reporter = DownloadReporter(label: pack.name, total: pack.bytes, report: progress, fraction: fraction)
-        // Several connections are usually much faster than one from GitHub's CDN.
-        // Any problem falls back to a single stream; the pinned hash decides either way.
+    /// Tries each source in order until one yields exactly the pinned bytes. Any
+    /// failure, wrong size or wrong hash moves on to the next source; cancellation
+    /// stops. `pack.sha256` and `pack.bytes` are the only trust anchor.
+    static func download(from sources: [URL], to destination: URL, pack: ModelPack, reporter: DownloadReporter?,
+                         fetch: (URL) async throws -> Void) async throws {
+        var lastError: Error = Failure(message: "This build has no model download source.")
+        for url in sources {
+            try Task.checkCancellation()
+            try? FileManager.default.removeItem(at: destination)
+            reporter?.reset()
+            do {
+                try await fetch(url)
+                let size = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64) ?? -1
+                guard size == pack.bytes, try sha256(of: destination) == pack.sha256 else {
+                    throw Failure(message: "The \(pack.name) model download does not match its expected checksum.")
+                }
+                return
+            } catch is CancellationError {
+                try? FileManager.default.removeItem(at: destination)
+                throw CancellationError()
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    /// One source: parallel ranges when the host supports them, else a single stream.
+    static func fetch(_ url: URL, to destination: URL, pack: ModelPack, reporter: DownloadReporter) async throws {
+        guard ModelPack.isTrustedDownload(url) else { throw Failure(message: "The model download address is not trusted.") }
+        // Several connections are usually much faster than one from a release CDN.
         do { try await rangedDownload(url, to: destination, pack: pack, reporter: reporter) }
         catch is CancellationError { throw CancellationError() }
         catch {
             try? FileManager.default.removeItem(at: destination)
             reporter.reset()
             try await singleDownload(url, to: destination, pack: pack, reporter: reporter)
-        }
-        let size = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64) ?? -1
-        guard size == pack.bytes, try sha256(of: destination) == pack.sha256 else {
-            try? FileManager.default.removeItem(at: destination)
-            throw Failure(message: "The \(pack.name) model download does not match its expected checksum.")
         }
     }
 
@@ -233,7 +264,7 @@ enum ModelStore {
     private static func singleDownload(_ url: URL, to destination: URL, pack: ModelPack, reporter: DownloadReporter) async throws {
         let (file, response) = try await URLSession.shared.download(for: request(url), delegate: reporter.part(0))
         defer { try? FileManager.default.removeItem(at: file) }
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200, let final = http.url, UpdateRelease.isTrustedDownload(final) else {
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200, let final = http.url, ModelPack.isTrustedDownload(final) else {
             throw Failure(message: "The \(pack.name) model download failed.")
         }
         try FileManager.default.moveItem(at: file, to: destination)
@@ -243,7 +274,7 @@ enum ModelStore {
         // A one-byte probe follows the release redirect and confirms range support.
         let (_, probe) = try await URLSession.shared.data(for: request(url, range: 0...0))
         guard let http = probe as? HTTPURLResponse, http.statusCode == 206, let final = http.url,
-              UpdateRelease.isTrustedDownload(final),
+              ModelPack.isTrustedDownload(final),
               let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
               contentRange.split(separator: "/").last.flatMap({ Int64($0) }) == pack.bytes else {
             throw Failure(message: "Ranged download unavailable.")

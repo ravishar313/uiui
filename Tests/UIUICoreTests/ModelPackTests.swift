@@ -23,6 +23,34 @@ final class ModelPackTests: XCTestCase {
         XCTAssertTrue(UpdateRelease.isTrustedDownload(phonon.downloadURL(repository: "a/b")!))
     }
 
+    func testSourcesTryHuggingFaceFirstThenGitHub() {
+        let phonon = pack()
+        XCTAssertEqual(phonon.downloadSources(repository: "ravishar313/uiui", huggingFace: "ravishar313/uiui-models").map(\.absoluteString), [
+            "https://huggingface.co/ravishar313/uiui-models/resolve/models-phonon-0123456789ab/uiui-model-phonon-0123456789ab.aar",
+            "https://github.com/ravishar313/uiui/releases/download/models-phonon-0123456789ab/uiui-model-phonon-0123456789ab.aar",
+        ])
+        // Missing or malformed configuration drops that source only.
+        XCTAssertEqual(phonon.downloadSources(repository: "a/b", huggingFace: nil).map(\.host), ["github.com"])
+        XCTAssertEqual(phonon.downloadSources(repository: "a/b", huggingFace: "../x y").map(\.host), ["github.com"])
+        XCTAssertEqual(phonon.downloadSources(repository: nil, huggingFace: "a/b").map(\.host), ["huggingface.co"])
+        XCTAssertTrue(phonon.downloadSources(repository: nil, huggingFace: nil).isEmpty)
+    }
+
+    func testHuggingFaceHostsTrustedForModelPacksOnly() {
+        let huggingFace = ["https://huggingface.co/a/b/resolve/t/x.aar", "https://us.aws.cdn.hf.co/xet-bridge-us/x",
+                           "https://cas-bridge.xethub.hf.co/x", "https://cdn-lfs-us-1.hf.co/x", "https://cdn-lfs.huggingface.co/x"]
+        for text in huggingFace {
+            let url = URL(string: text)!
+            XCTAssertTrue(ModelPack.isTrustedDownload(url), text)
+            XCTAssertFalse(UpdateRelease.isTrustedDownload(url), "app update zips must stay on GitHub: \(text)")
+        }
+        XCTAssertTrue(ModelPack.isTrustedDownload(URL(string: "https://release-assets.githubusercontent.com/x")!))
+        for text in ["http://huggingface.co/x", "https://hf.co.evil.example/x", "https://evilhf.co/x", "https://huggingface.co.evil.example/x",
+                     "https://user@huggingface.co/x", "https://evil.example/x"] {
+            XCTAssertFalse(ModelPack.isTrustedDownload(URL(string: text)!), text)
+        }
+    }
+
     func testListRoundTripAndLookup() throws {
         let list = ModelPackList(packs: [pack(), pack(name: "MiniLM", id: "ffffffffffff")])
         let decoded = try ModelPackList.decode(JSONEncoder().encode(list))

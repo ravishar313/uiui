@@ -34,5 +34,7 @@
 	<string>uiui uses on-device speech recognition for the dictations you start. Audio is not uploaded.</string>
 	<key>UIUIUpdateRepository</key>
 	<string>ravishar313/uiui</string>
+	<key>UIUIModelHuggingFaceRepository</key>
+	<string>ravishar313/uiui-models</string>
 </dict>
 </plist>
