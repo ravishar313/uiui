@@ -94,10 +94,10 @@ final class PanelCoordinator {
         self.model = model
         ownsSystemHooks = installSystemObservers
         workspace = WorkspaceWindowLifetime(model: model) {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 580), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 760), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.title = "uiui"; window.titlebarAppearsTransparent = true; window.toolbarStyle = .unified
             window.tabbingMode = .disallowed
-            window.minSize = NSSize(width: 680, height: 460); window.isReleasedWhenClosed = false; window.isRestorable = false
+            window.minSize = NSSize(width: 940, height: 520); window.isReleasedWhenClosed = false; window.isRestorable = false
             window.contentView = NSHostingView(rootView: LibraryView(model: model)); window.center()
             return window
         }

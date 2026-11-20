@@ -48,7 +48,7 @@ struct NotebookRail: View {
 
     private func keyRow<Cap: View>(_ cap: Cap, _ text: String) -> some View {
         HStack(spacing: 12) {
-            cap
+            cap.frame(width: 50, alignment: .leading)
             Text(text).font(.system(size: 12)).foregroundStyle(.primary.opacity(0.75)).lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -89,7 +89,7 @@ struct NotebookRail: View {
         let idle = !active && !model.voiceIsRecording && !model.isVoicePaused && model.voice.state != "finishing" && model.voice.state != "working"
         return HStack(spacing: 10) {
             MicEyes(open: active || model.voiceIsRecording)
-            Text(idle ? "Microphone off \u{00B7} nothing is listening" : model.voiceStatusSummary)
+            Text(idle ? "Microphone off" : model.voiceStatusSummary)
                 .font(.system(size: 11, weight: .medium)).lineLimit(2)
                 .foregroundStyle(idle ? .secondary : .primary)
             Spacer(minLength: 4)

@@ -25,11 +25,12 @@ struct LibraryView: View {
         .sheet(item: $model.workspaceSheet) { _ in
             VStack(spacing: 0) {
                 HStack {
-                    Text("Settings").font(.headline)
+                    Text("Settings").font(.system(size: 20, weight: .semibold))
                     Spacer()
                     Button("Done") { model.workspaceSheet = nil }.keyboardShortcut(.defaultAction)
-                }.padding(.horizontal, 22).padding(.vertical, 16)
-                Divider()
+                        .buttonStyle(.plain).font(.system(size: 13, weight: .semibold)).foregroundStyle(UIUIStyle.ink)
+                        .padding(.horizontal, 16).padding(.vertical, 7).background(UIUIStyle.accent, in: Capsule())
+                }.padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 4)
                 SettingsView(model: model)
             }.frame(width: 600, height: 540).background(UIUIStyle.paper(scheme))
         }
