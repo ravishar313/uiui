@@ -57,6 +57,8 @@ if (( ! publish )); then
   exit 0
 fi
 [[ -n "$repository" ]] || { print -u2 "UIUIUpdateRepository is missing from resources/Info.plist."; exit 1; }
+source scripts/model-mirror.zsh
+[[ -n "$hf_model_repository" ]] || { print -u2 "UIUIModelHuggingFaceRepository is missing from resources/Info.plist."; exit 1; }
 # An app-only release is unusable if its model packs were never published.
 # The signed app pins each pack's hash; the published asset must be those bytes.
 for line in $(/usr/bin/python3 -c 'import json; [print("models-%s-%s:%s:%s:%s" % (p["name"].lower(), p["id"], p["archive"], p["sha256"], p["bytes"])) for p in json.load(open("resources/ModelPacks.json"))["packs"]]'); do
@@ -72,5 +74,8 @@ digest = assets[0].get("digest")
 if digest and digest != "sha256:" + pinned:
     sys.exit("published %s does not match resources/ModelPacks.json" % name)
 ' "$pack_archive" "$pinned" "$bytes" || { print -u2 "Run scripts/package-models.sh --publish to re-pin, then rebuild."; exit 1; }
+  # Hugging Face is the fast source; without it every user waits on GitHub.
+  [[ "$(hf_pack_status "$tag" "$pack_archive" "$pinned" "$bytes")" == match ]] \
+    || { print -u2 "Model pack $tag is not on Hugging Face $hf_model_repository. Run scripts/package-models.sh --publish first."; exit 1; }
 done
 gh release create "v$version" "$archive" "$archive.sha256" "${extra_assets[@]}" --repo "$repository" --title "uiui $version" --notes-file "$notes" --latest

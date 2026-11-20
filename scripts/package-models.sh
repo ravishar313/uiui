@@ -4,7 +4,10 @@ cd "${0:A:h:h}"
 # Builds one zip per model pack (resources/Phonon, resources/MiniLM) into
 # build/model-packs/ and writes resources/ModelPacks.json, the signed pin the app
 # uses to find and verify downloaded packs. Packs only change when a model changes.
-# --publish creates a GitHub release models-<name>-<id> for each pack not yet released.
+# --publish creates a GitHub release models-<name>-<id> for each pack not yet released,
+# and uploads the same archive to the Hugging Face mirror (UIUIModelHuggingFaceRepository)
+# tagged models-<name>-<id>. The app tries Hugging Face first, then GitHub. The hf CLI
+# must already be logged in (`hf auth login`); no token is passed on the command line.
 publish=0
 for argument in "$@"; do
   case "$argument" in
@@ -19,8 +22,11 @@ mkdir -p "$output"
 scratch="$(mktemp -d "$PWD/build/.uiui-models.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 repository="$(/usr/libexec/PlistBuddy -c 'Print :UIUIUpdateRepository' resources/Info.plist 2>/dev/null || true)"
+source scripts/model-mirror.zsh
 if (( publish )); then
   [[ -n "$repository" ]] || { print -u2 "UIUIUpdateRepository is missing from resources/Info.plist."; exit 1; }
+  [[ -n "$hf_model_repository" ]] || { print -u2 "UIUIModelHuggingFaceRepository is missing from resources/Info.plist."; exit 1; }
+  hf auth whoami >/dev/null 2>&1 || { print -u2 "The hf CLI is not logged in. Run: hf auth login"; exit 1; }
 fi
 entries=()
 tags=()
@@ -32,10 +38,15 @@ for pack in Phonon:assets.json MiniLM:manifest.json; do
   # A published pack is immutable: its exact bytes are what the app pins, even
   # if a local rebuild would differ (another Mac, a newer ditto).
   if (( publish )) && gh release view "models-${name:l}-$id" --repo "$repository" >/dev/null 2>&1; then
-    mkdir -p "$scratch/published"
-    gh release download "models-${name:l}-$id" --repo "$repository" --pattern "$archive" --dir "$scratch/published" --clobber
-    [[ -f "$scratch/published/$archive" ]] || { print -u2 "Release models-${name:l}-$id has no $archive."; exit 1; }
-    mv -f "$scratch/published/$archive" "$output/$archive"
+    published="$(gh api "repos/$repository/releases/tags/models-${name:l}-$id" --jq ".assets[] | select(.name == \"$archive\") | .digest" 2>/dev/null || true)"
+    if [[ -f "$output/$archive" && -n "$published" && "$published" == "sha256:$(/usr/bin/shasum -a 256 "$output/$archive" | /usr/bin/cut -d ' ' -f 1)" ]]; then
+      print "$archive here matches the published release"
+    else
+      mkdir -p "$scratch/published"
+      gh release download "models-${name:l}-$id" --repo "$repository" --pattern "$archive" --dir "$scratch/published" --clobber
+      [[ -f "$scratch/published/$archive" ]] || { print -u2 "Release models-${name:l}-$id has no $archive."; exit 1; }
+      mv -f "$scratch/published/$archive" "$output/$archive"
+    fi
   elif [[ ! -f "$output/$archive" ]]; then
     # LZMA Apple Archive: about 20% smaller than zip for the speech weights, and
     # unpacked by macOS's own /usr/bin/aa. Owners and times are left out so a
@@ -49,7 +60,7 @@ for pack in Phonon:assets.json MiniLM:manifest.json; do
   digest="$(/usr/bin/shasum -a 256 "$output/$archive" | /usr/bin/cut -d ' ' -f 1)"
   size="$(/usr/bin/stat -f %z "$output/$archive")"
   entries+=("    {\"name\": \"$name\", \"id\": \"$id\", \"archive\": \"$archive\", \"sha256\": \"$digest\", \"bytes\": $size}")
-  tags+=("models-${name:l}-$id:$archive")
+  tags+=("models-${name:l}-$id:$archive:$digest:$size")
   print "$name $id $size bytes"
 done
 {
@@ -64,8 +75,7 @@ done
 } > resources/ModelPacks.json
 print "Wrote resources/ModelPacks.json"
 for item in $tags; do
-  tag="${item%%:*}"
-  archive="${item#*:}"
+  tag="${item%%:*}"; rest="${item#*:}"; archive="${rest%%:*}"; rest="${rest#*:}"; digest="${rest%%:*}"; size="${rest#*:}"
   if (( publish )); then
     if gh release view "$tag" --repo "$repository" >/dev/null 2>&1; then
       print "$tag already published"
@@ -74,7 +84,16 @@ for item in $tags; do
       gh release create "$tag" "$output/$archive" --repo "$repository" --title "uiui model $tag" --latest=false \
         --notes "Model pack for uiui. Downloaded automatically by the app; do not delete."
     fi
+    case "$(hf_pack_status "$tag" "$archive" "$digest" "$size")" in
+      match) print "$tag already on Hugging Face" ;;
+      different) print -u2 "Hugging Face $hf_model_repository tag $tag holds a different $archive. Fix it by hand; tags are never moved here."; exit 1 ;;
+      missing)
+        hf upload "$hf_model_repository" "$output/$archive" "$archive" --commit-message "Add $tag"
+        hf repos tag create "$hf_model_repository" "$tag" --revision main -m "uiui model pack $tag"
+        [[ "$(hf_pack_status "$tag" "$archive" "$digest" "$size")" == match ]] \
+          || { print -u2 "Hugging Face $tag does not serve the expected $archive after upload."; exit 1; } ;;
+    esac
   else
-    print "Would publish $tag with $archive to ${repository:-<repository>}"
+    print "Would publish $tag with $archive to ${repository:-<repository>} and Hugging Face ${hf_model_repository:-<repository>}"
   fi
 done

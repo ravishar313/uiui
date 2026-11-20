@@ -34,9 +34,33 @@ public struct ModelPack: Codable, Equatable, Sendable {
         SHA256.hash(data: manifest).map { String(format: "%02x", $0) }.joined().prefix(12).description
     }
 
+    /// GitHub release asset `models-<name>-<id>/<archive>` in the app's update repository.
     public func downloadURL(repository: String) -> URL? {
         guard ModelPack.isValidRepository(repository) else { return nil }
         return URL(string: "https://github.com/\(repository)/releases/download/\(releaseTag)/\(archive)")
+    }
+
+    /// The same archive in a Hugging Face model repository, at the tag named like
+    /// the GitHub release (`models-<name>-<id>`), so the file never moves under an app.
+    public func mirrorURL(huggingFace repository: String) -> URL? {
+        guard ModelPack.isValidRepository(repository) else { return nil }
+        return URL(string: "https://huggingface.co/\(repository)/resolve/\(releaseTag)/\(archive)")
+    }
+
+    /// Where to fetch this pack, in the order to try: Hugging Face first (much faster
+    /// than GitHub release downloads), then GitHub. Each source is checked against
+    /// `sha256` and `bytes`, so a source is only a location, never a trust anchor.
+    public func downloadSources(repository: String?, huggingFace: String?) -> [URL] {
+        [huggingFace.flatMap { mirrorURL(huggingFace: $0) }, repository.flatMap { downloadURL(repository: $0) }].compactMap { $0 }
+    }
+
+    /// Hosts a model pack download may start on or be redirected to: the app update
+    /// hosts plus Hugging Face and its CDN (`*.hf.co`). App update zips use
+    /// `UpdateRelease.isTrustedDownload`, which does not accept these.
+    public static func isTrustedDownload(_ url: URL) -> Bool {
+        if UpdateRelease.isTrustedDownload(url) { return true }
+        guard url.scheme == "https", let host = url.host?.lowercased(), url.user == nil, url.password == nil else { return false }
+        return host == "huggingface.co" || host.hasSuffix(".huggingface.co") || host.hasSuffix(".hf.co")
     }
 
     public static func isValidRepository(_ value: String) -> Bool {
