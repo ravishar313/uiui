@@ -151,8 +151,17 @@ final class SystemSetup {
     /// main-actor task and replies later, so `terminate` must not run inside a main-actor
     /// job: that job would hold the main queue while AppKit waits for the reply, and uiui
     /// would never quit (an update's relaunch then hung). Run it from the run loop instead.
+    /// AppKit also refuses to terminate, without asking the delegate, while any window
+    /// has a sheet attached (Settings is one), so close sheets first.
     static func quit() {
-        RunLoop.main.perform(inModes: [.common]) { NSApplication.shared.terminate(nil) }
+        RunLoop.main.perform(inModes: [.common]) {
+            MainActor.assumeIsolated {
+                for window in NSApplication.shared.windows {
+                    if let sheet = window.attachedSheet { window.endSheet(sheet) }
+                }
+                NSApplication.shared.terminate(nil)
+            }
+        }
     }
 
     /// Opens a fresh instance after this one quits normally, so shutdown still
