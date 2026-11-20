@@ -36,6 +36,17 @@ final class MenuBarEyesTests: XCTestCase {
             NSGraphicsContext.restoreGraphicsState()
             try XCTUnwrap(rep.representation(using: .png, properties: [:]))
                 .write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(state).png"))
+            // Actual size: 18 x 18 px on a light bar.
+            let small = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 18, pixelsHigh: 18, bitsPerSample: 8,
+                                                       samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                       colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: small)
+            NSColor(white: 0.93, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: 18, height: 18).fill()
+            StatusMenuController.eyeImage(state).draw(in: NSRect(x: 0, y: 0, width: 18, height: 18))
+            NSGraphicsContext.restoreGraphicsState()
+            try XCTUnwrap(small.representation(using: .png, properties: [:]))
+                .write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(state)-1x.png"))
         }
     }
 }

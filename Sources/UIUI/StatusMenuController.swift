@@ -57,26 +57,30 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// Cached template image for a state; built once.
     static func eyeImage(_ state: EyeState) -> NSImage { eyeImages[state] ?? drawEyes(state) }
 
+    /// One open eye in the UIUIMark proportions, with its glint punched out near the top right.
+    private static func eye(centerX x: CGFloat, height: CGFloat) {
+        let width: CGFloat = 4.2
+        let rect = NSRect(x: x - width / 2, y: 9 - height / 2, width: width, height: height)
+        NSBezierPath(roundedRect: rect, xRadius: 1.6, yRadius: 1.6).fill()
+        guard let context = NSGraphicsContext.current else { return }
+        context.saveGraphicsState()
+        context.compositingOperation = .clear
+        let glint: CGFloat = height > 6 ? 1.5 : 1.2
+        NSBezierPath(ovalIn: NSRect(x: rect.maxX - glint - 0.7, y: rect.maxY - glint - 0.9, width: glint, height: glint)).fill()
+        context.restoreGraphicsState()
+    }
+
     private static func drawEyes(_ state: EyeState) -> NSImage {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
             NSColor.black.setFill()
             NSColor.black.setStroke()
             let centers: [CGFloat] = [5.5, 12.5]
             switch state {
-            case .listening:
-                for x in centers {
-                    NSBezierPath(roundedRect: NSRect(x: x - 2.1, y: 3.5, width: 4.2, height: 11), xRadius: 2.1, yRadius: 2.1).fill()
-                }
+            case .listening: for x in centers { Self.eye(centerX: x, height: 8) }
+            case .paused: for x in centers { Self.eye(centerX: x, height: 4.2) }
             case .resting:
                 for x in centers {
                     NSBezierPath(roundedRect: NSRect(x: x - 2.6, y: 8.1, width: 5.2, height: 1.9), xRadius: 0.95, yRadius: 0.95).fill()
-                }
-            case .paused:
-                // Closed eyes, each line split by a gap: held, not asleep.
-                for x in centers {
-                    for dx in [-1.7, 1.7] as [CGFloat] {
-                        NSBezierPath(roundedRect: NSRect(x: x + dx - 0.95, y: 8.1, width: 1.9, height: 1.9), xRadius: 0.95, yRadius: 0.95).fill()
-                    }
                 }
             }
             return true
