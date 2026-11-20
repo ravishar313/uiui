@@ -7,9 +7,13 @@ struct HistoryListView: View {
     @State private var appFilter: String?
     /// Scrolls with the history, so the whole page moves as one at any window size.
     private let top: AnyView
-    init(model: AppModel, initialAppFilter: String? = nil, top: AnyView = AnyView(EmptyView())) {
+    /// Opens an item in fix-a-word mode.
+    private let onFixWord: (CaptureItem) -> Void
+    init(model: AppModel, initialAppFilter: String? = nil, top: AnyView = AnyView(EmptyView()),
+         onFixWord: @escaping (CaptureItem) -> Void = { _ in }) {
         self.model = model
         self.top = top
+        self.onFixWord = onFixWord
         _appFilter = State(initialValue: initialAppFilter)
     }
     @State private var focusedID: UUID?
@@ -24,6 +28,7 @@ struct HistoryListView: View {
     private var items: [CaptureItem] { HistoryOrganizer.filter(model.visibleItems, app: activeFilter) }
     private var sections: [HistorySection] { HistoryOrganizer.sections(for: items) }
     private var orderedIDs: [UUID] { sections.flatMap(\.items).map(\.id) }
+    private var learned: [String] { NotebookText.learnedSpellings(model.settings.vocabulary) }
     private var isFiltering: Bool { !model.searchText.isEmpty || activeFilter != nil }
 
     var body: some View {
@@ -36,27 +41,11 @@ struct HistoryListView: View {
             } message: { _ in Text("This removes it from your local history.") }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 12) {
-                Text("History").font(.system(size: 14, weight: .semibold))
-                Text("\(items.count)").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-                    .accessibilityLabel("\(items.count) saved")
-                Spacer(minLength: 8)
-                if !apps.isEmpty { appMenu }
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
-                    TextField("Search history", text: $model.searchText).textFieldStyle(.plain)
-                    if !model.searchText.isEmpty {
-                        Button { model.searchText = "" } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }.buttonStyle(.plain).accessibilityLabel("Clear search").help("Clear search")
-                    }
-                }.font(.system(size: 11)).padding(7)
-                    .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7)).frame(width: 200)
-            }
-            StatsLine(model: model)
-        }.padding(.horizontal, 22).padding(.vertical, 12)
+    /// A small app filter chip above the days. Search lives in the window's top row.
+    @ViewBuilder private var header: some View {
+        if !apps.isEmpty {
+            HStack { appMenu; Spacer(minLength: 0) }.padding(.horizontal, 28).padding(.top, 10).padding(.bottom, 4)
+        }
     }
 
     private var appMenu: some View {
@@ -72,8 +61,10 @@ struct HistoryListView: View {
             }
         } label: {
             Label(activeFilter ?? "All apps", systemImage: "line.3.horizontal.decrease")
-                .font(.system(size: 11)).lineLimit(1)
-        }.menuStyle(.borderlessButton).fixedSize()
+                .font(.system(size: 12, weight: .medium)).lineLimit(1)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(UIUIStyle.chip(scheme).opacity(activeFilter == nil ? 0.7 : 1), in: Capsule())
+        }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             .help("Show dictations from one app").accessibilityLabel("Filter by app")
             .accessibilityValue(activeFilter ?? "All apps")
     }
@@ -82,7 +73,7 @@ struct HistoryListView: View {
         VStack(spacing: 9) {
             if isFiltering {
                 Image(systemName: "magnifyingglass").font(.system(size: 23)).foregroundStyle(.tertiary)
-                Text("No matching text").font(.system(size: 14, weight: .medium))
+                Text("No matching text").font(UIUIStyle.words(17))
             }
             Text(emptyDetail).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
             if activeFilter != nil {
@@ -96,7 +87,7 @@ struct HistoryListView: View {
     private var emptyDetail: String {
         if isFiltering { return "Try another search or app." }
         if !model.settings.saveDictationHistory { return "History is off, so new dictations are not kept here." }
-        return "Saved dictations appear here."
+        return ""
     }
 
     private var list: some View {
@@ -104,22 +95,23 @@ struct HistoryListView: View {
             ScrollView {
                 top
                 header
-                if items.isEmpty { emptyState }
+                if items.isEmpty && (isFiltering || !model.settings.saveDictationHistory) { emptyState }
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ForEach(sections) { section in
                         Section {
                             ForEach(section.items) { item in
                                 HistoryRow(model: model, item: item, showsDate: section.id == HistoryOrganizer.pinnedID,
+                                           learned: learned,
                                            isFocused: listFocused && keyboardActive && focusedID == item.id,
                                            onOpen: { focusedID = item.id; keyboardActive = false; model.selectedItemID = item.id },
+                                           onFix: { onFixWord(item) },
                                            onDelete: { pendingDelete = item })
                                     .id(item.id)
-                                Divider().opacity(0.35).padding(.horizontal, 22)
                             }
                         } header: {
-                            Text(section.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                            Text(section.title).uiuiSectionLabel()
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 22).padding(.vertical, 6)
+                                .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 8)
                                 .background(UIUIStyle.paper(scheme))
                                 .accessibilityAddTraits(.isHeader)
                         }
@@ -170,81 +162,81 @@ struct HistoryListView: View {
     }
 }
 
-/// One saved item: when, where it went, and its text, with quick actions.
+/// One saved item: when and where on the left, what you said on the right.
 private struct HistoryRow: View {
     let model: AppModel
     let item: CaptureItem
     let showsDate: Bool
+    /// Spellings from the dictionary and word fixes, underlined where they appear.
+    let learned: [String]
     let isFocused: Bool
     let onOpen: () -> Void
+    let onFix: () -> Void
     let onDelete: () -> Void
     @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
 
     private var showsActions: Bool { hovering || isFocused }
+    private var text: String { item.body.isEmpty ? item.title : item.body }
     private var accessibilitySummary: String {
         let time = item.createdAt.formatted(date: showsDate ? .abbreviated : .omitted, time: .shortened)
         let destination = item.sourceApp.flatMap { $0.isEmpty ? nil : " to \($0)" } ?? ""
-        return "\(item.kind.title) at \(time)\(destination). \(item.body.isEmpty ? item.title : item.body)"
+        return "\(item.kind.title) at \(time)\(destination). \(text)"
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button(action: onOpen) { content }
-                .buttonStyle(.plain).frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel(accessibilitySummary).accessibilityHint("Opens the full text")
-            HStack(spacing: 0) {
-                QuietIconButton(symbol: item.isPinned ? "pin.fill" : "pin", label: item.isPinned ? "Unpin" : "Pin") { model.togglePin(item) }
-                    .opacity(showsActions || item.isPinned ? 1 : 0)
-                QuietIconButton(symbol: "trash", label: "Delete saved text", action: onDelete)
-                    .opacity(showsActions ? 1 : 0)
-                QuietIconButton(symbol: "doc.on.doc", label: "Copy saved text") { model.copy(item.body) }
+        Button(action: onOpen) { content }
+            .buttonStyle(.plain).frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel(accessibilitySummary).accessibilityHint("Opens the full text")
+            .padding(.horizontal, 28)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isFocused ? UIUIStyle.accent.opacity(0.16) : hovering ? Color.primary.opacity(0.03) : .clear)
+                .padding(.horizontal, 14))
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(UIUIStyle.hair(scheme)).frame(height: 1).padding(.horizontal, 28)
             }
-        }.padding(.horizontal, 22)
-            .background((isFocused ? UIUIStyle.accent.opacity(0.16) : hovering ? Color.primary.opacity(0.03) : .clear))
+            .overlay(alignment: .topTrailing) {
+                HStack(spacing: 0) {
+                    QuietIconButton(symbol: item.isPinned ? "pin.fill" : "pin", label: item.isPinned ? "Unpin" : "Pin") { model.togglePin(item) }
+                    QuietIconButton(symbol: "character.cursor.ibeam", label: "Fix a word", action: onFix)
+                    QuietIconButton(symbol: "trash", label: "Delete saved text", action: onDelete)
+                    QuietIconButton(symbol: "doc.on.doc", label: "Copy saved text") { model.copy(item.body) }
+                }.background(UIUIStyle.card(scheme), in: Capsule())
+                    .padding(.top, 8).padding(.trailing, 30)
+                    .opacity(showsActions ? 1 : 0).allowsHitTesting(showsActions)
+            }
             .overlay(alignment: .leading) {
                 if isFocused { Rectangle().fill(UIUIStyle.accent).frame(width: 3) }
             }
             .onHover { hovering = $0 }
             .contextMenu {
+                Button("Open", action: onOpen)
+                Button("Fix a word\u{2026}", action: onFix)
                 Button(item.isPinned ? "Unpin" : "Pin") { model.togglePin(item) }
                 Button("Copy") { model.copy(item.body) }
                 Divider()
-                Button("Delete…", role: .destructive, action: onDelete)
+                Button("Delete\u{2026}", role: .destructive, action: onDelete)
             }
             .accessibilityElement(children: .contain)
             .accessibilityAction(named: "Delete") { onDelete() }
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text(item.createdAt.formatted(date: showsDate ? .abbreviated : .omitted, time: .shortened))
-                if let source = item.sourceApp, !source.isEmpty {
-                    Text("·")
-                    Label(source, systemImage: "arrow.turn.down.right").labelStyle(.titleAndIcon).lineLimit(1)
-                } else {
-                    Text("·"); Text("No app").foregroundStyle(.tertiary)
+        HStack(alignment: .firstTextBaseline, spacing: 20) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    if item.isPinned { Image(systemName: "pin.fill").font(.system(size: 8)).accessibilityHidden(true) }
+                    Text(showsDate ? item.createdAt.formatted(.dateTime.day().month(.abbreviated).year()) : item.createdAt.formatted(date: .omitted, time: .shortened))
                 }
-                if item.kind != .dictation { Text("·"); Text(item.kind.title) }
-                if !item.project.isEmpty && item.project != "Personal" { Text("·"); Text(item.project).lineLimit(1) }
-                Spacer(minLength: 0)
-            }.font(.system(size: 10)).foregroundStyle(.secondary)
-            Text(item.body.isEmpty ? item.title : item.body)
-                .font(.system(size: 13)).foregroundStyle(.primary.opacity(0.85))
-                .lineLimit(2).lineSpacing(3).frame(maxWidth: .infinity, alignment: .leading)
-        }.padding(.vertical, 12).contentShape(Rectangle())
-    }
-}
-
-/// Words dictated and an honest estimate of typing time saved. Silent when history is off.
-private struct StatsLine: View {
-    let model: AppModel
-    var body: some View {
-        if let stats = model.dictationStats() {
-            Text("Last 7 days · \(stats.summary)")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
-                .help("Estimated at \(DictationStats.assumedTypingWordsPerMinute) words per minute of typing, from your saved history")
-        }
+                Text(item.sourceApp.flatMap { $0.isEmpty ? nil : $0 } ?? "No app").lineLimit(1)
+                    .foregroundStyle(item.sourceApp?.isEmpty == false ? .secondary : .tertiary)
+                if item.kind != .dictation { Text(item.kind.title).lineLimit(1) }
+                if !item.project.isEmpty && item.project != "Personal" { Text(item.project).lineLimit(1) }
+            }.font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 92, alignment: .leading)
+            Text(NotebookText.underlined(text, learned: learned))
+                .font(UIUIStyle.words(17)).lineSpacing(4).foregroundStyle(.primary.opacity(0.9))
+                .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(.vertical, 16).contentShape(Rectangle())
     }
 }
 
@@ -270,8 +262,8 @@ struct SavedTextView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Button { model.selectedItemID = nil } label: { Label("History", systemImage: "chevron.left") }
-                    .buttonStyle(.plain).help("Back to history").keyboardShortcut(.cancelAction)
+                Button { model.selectedItemID = nil } label: { Label("Notebook", systemImage: "chevron.left") }
+                    .buttonStyle(.plain).help("Back to the notebook").keyboardShortcut(.cancelAction)
                 Spacer()
                 if undoableFix != nil {
                     Button { undo() } label: { Label("Undo last fix", systemImage: "arrow.uturn.backward") }
@@ -283,12 +275,11 @@ struct SavedTextView: View {
                 QuietIconButton(symbol: item.isPinned ? "pin.fill" : "pin", label: item.isPinned ? "Unpin" : "Pin") { model.togglePin(item) }
                 Button { model.copy(item.body) } label: { Label("Copy saved text", systemImage: "doc.on.doc") }.buttonStyle(.borderless)
                 QuietIconButton(symbol: "trash", label: "Delete saved text") { showDelete = true }
-            }.font(.system(size: 12)).padding(.horizontal, 22).padding(.vertical, 12)
-            Divider().opacity(0.35)
+            }.font(.system(size: 12)).padding(.horizontal, 28).padding(.vertical, 10)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text(item.kind == .dictation ? "Dictation" : item.title).font(.system(size: 18, weight: .medium))
-                    Text(metadata).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(item.kind == .dictation ? "Dictation" : item.title).font(UIUIStyle.words(20))
+                    Text(metadata).font(.system(size: 11)).foregroundStyle(.secondary)
                     if let notice { noticeBanner(notice) }
                     if fixMode {
                         Text("Click the word that was misheard, or use the arrow keys and Return.").font(.system(size: 11)).foregroundStyle(.secondary)
@@ -296,16 +287,17 @@ struct SavedTextView: View {
                             await submit(range: range, heard: heard, correction: correction, others: others, dictionary: dictionary)
                         }
                     } else {
-                        Text(item.body).font(.system(size: 14)).lineSpacing(7).textSelection(.enabled)
+                        Text(NotebookText.underlined(item.body, learned: NotebookText.learnedSpellings(model.settings.vocabulary)))
+                            .font(UIUIStyle.words(FixTextView.fontSize)).lineSpacing(FixTextView.lineSpacing).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if let original = item.rawText {
                         DisclosureGroup("Original wording") {
-                            Text(original).font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(5)
+                            Text(original).font(UIUIStyle.words(14)).foregroundStyle(.secondary).lineSpacing(5)
                                 .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 9)
                         }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.top, 10)
                     }
-                }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(.horizontal, 28).padding(.vertical, 18).frame(maxWidth: .infinity, alignment: .leading)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
             .alert("Delete this saved text?", isPresented: $showDelete) {
@@ -414,8 +406,15 @@ final class FixTextView: NSTextView {
     private var lastHeight: CGFloat = 0
     private var tracking: NSTrackingArea?
 
-    static let fontSize: CGFloat = 14
-    static let lineSpacing: CGFloat = 7
+    static let fontSize: CGFloat = 18
+    static let lineSpacing: CGFloat = 8
+
+    /// New York, matching `UIUIStyle.words`.
+    static func wordsFont() -> NSFont {
+        let base = NSFont.systemFont(ofSize: fontSize)
+        guard let descriptor = base.fontDescriptor.withDesign(.serif), let font = NSFont(descriptor: descriptor, size: fontSize) else { return base }
+        return font
+    }
 
     func configure(text: String) {
         guard text != plainText || textStorage?.length == 0 else { return }
@@ -423,7 +422,7 @@ final class FixTextView: NSTextView {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = Self.lineSpacing
         textStorage?.setAttributedString(NSAttributedString(string: text, attributes: [
-            .font: NSFont.systemFont(ofSize: Self.fontSize), .foregroundColor: NSColor.labelColor, .paragraphStyle: style
+            .font: Self.wordsFont(), .foregroundColor: NSColor.labelColor, .paragraphStyle: style
         ]))
         marked = []; hover = nil; keyboardWord = nil; lastWidth = -1
     }
