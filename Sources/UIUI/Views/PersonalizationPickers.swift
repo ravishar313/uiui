@@ -19,13 +19,15 @@ struct AccentPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Colour").font(.system(size: 12, weight: .medium))
+            Text("Colour").font(.system(size: 13, weight: .medium))
             HStack(spacing: 10) {
                 ForEach(UIUIAccent.allCases.filter { $0 != .custom }) { option in
                     Button { choice = option } label: {
                         Circle().fill(UIUIStyle.color(option.resolved(customHex: ""))).frame(width: 22, height: 22)
                             .overlay { if choice == option { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(UIUIStyle.ink) } }
-                            .overlay { Circle().strokeBorder(Color.primary.opacity(0.15)) }
+                            .overlay { Circle().strokeBorder(Color.primary.opacity(0.12)) }
+                            .padding(2)
+                            .overlay { if choice == option { Circle().strokeBorder(Color.primary.opacity(0.55), lineWidth: 1.5) } }
                     }
                     .buttonStyle(.plain).help(option.title)
                     .accessibilityLabel(option.title).accessibilityAddTraits(choice == option ? .isSelected : [])
@@ -50,7 +52,7 @@ struct SoundChoice: View {
                 Picker("Sound", selection: $pack) {
                     ForEach(SoundPack.allCases) { Text($0.title).tag($0) }
                 }.frame(maxWidth: 220)
-                Button("Play") { preview() }.accessibilityLabel("Play sound")
+                Button("Play") { preview() }.buttonStyle(ChipButtonStyle()).accessibilityLabel("Play sound")
                 Spacer()
             }
             HStack(spacing: 8) {

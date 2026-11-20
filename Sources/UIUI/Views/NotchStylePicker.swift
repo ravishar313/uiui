@@ -11,7 +11,7 @@ struct NotchStylePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Notch style").font(.system(size: 12, weight: .medium))
+            Text("Notch style").font(.system(size: 13, weight: .medium))
             HStack(spacing: 8) {
                 ForEach(NotchVisualStyle.allCases) { style in
                     Button { selection = style } label: {
@@ -21,20 +21,21 @@ struct NotchStylePicker: View {
                             HStack(spacing: 5) {
                                 Text(style.title).font(.system(size: 11, weight: .medium))
                                 Image(systemName: selection == style ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(selection == style ? selectionTint : Color.secondary.opacity(0.45))
                             }
                         }
                         .padding(.horizontal, 8).padding(.vertical, 9)
                         .frame(maxWidth: .infinity)
-                        .background(.primary.opacity(selection == style ? 0.055 : 0.02),
-                            in: RoundedRectangle(cornerRadius: 9))
+                        .background(UIUIStyle.chip(scheme).opacity(selection == style ? 1 : 0.55),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 9)
-                                .strokeBorder(selection == style ? selectionTint.opacity(0.65) : Color.primary.opacity(0.1),
-                                              lineWidth: selection == style ? 1.25 : 0.75)
+                            if selection == style {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(selectionTint.opacity(0.7), lineWidth: 1.25)
+                            }
                         }
-                        .contentShape(RoundedRectangle(cornerRadius: 9))
+                        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .help(style.detail)
@@ -44,7 +45,7 @@ struct NotchStylePicker: View {
                     .accessibilityAddTraits(selection == style ? .isSelected : [])
                 }
             }
-            Text(selection.detail).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(selection.detail).font(.system(size: 11)).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Notch style")
@@ -81,7 +82,7 @@ struct NotchSizePicker: View {
 
     var body: some View {
         HStack {
-            Text("Notch size").font(.system(size: 12, weight: .medium))
+            Text("Notch size").font(.system(size: 13, weight: .medium))
             Spacer()
             Picker("Notch size", selection: $selection) {
                 ForEach(NotchSize.allCases) { Text($0.title).tag($0) }

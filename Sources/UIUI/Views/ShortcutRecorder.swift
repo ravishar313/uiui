@@ -11,6 +11,7 @@ struct ShortcutRecorder: View {
     @State private var monitor: Any?
     @State private var pendingModifier: UInt16?
     @State private var issue: String?
+    @Environment(\.colorScheme) private var scheme
 
     private var recording: Bool { monitor != nil }
 
@@ -21,14 +22,15 @@ struct ShortcutRecorder: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(recording ? .secondary : .primary)
                     .padding(.horizontal, 12).frame(minWidth: 170, minHeight: 30, alignment: .leading)
-                    .background(.primary.opacity(recording ? 0.07 : 0.035), in: RoundedRectangle(cornerRadius: 7))
+                    .background(UIUIStyle.chip(scheme), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 7)
-                            .strokeBorder(recording ? UIUIStyle.accent : Color.primary.opacity(0.12), lineWidth: recording ? 1.5 : 0.75)
+                        if recording {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(UIUIStyle.accent, lineWidth: 1.5)
+                        }
                     }
                     .accessibilityLabel(recording ? "Recording shortcut" : "Voice shortcut \(model.settings.voiceTriggerKey.title)")
                 Button(recording ? "Cancel" : "Record shortcut…") { recording ? stop() : start() }
-                    .disabled(model.voiceIsRecording)
+                    .buttonStyle(ChipButtonStyle()).disabled(model.voiceIsRecording)
                 Menu("Presets") {
                     ForEach(VoiceTriggerKey.presets) { key in
                         Button(key.title) { stop(); choose(key) }
@@ -103,6 +105,7 @@ struct ShortcutRecorder: View {
 /// A compact physical-key hint; the full key name stays available to accessibility.
 struct VoiceTriggerKeycap: View {
     let key: VoiceTriggerKey
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         HStack(spacing: 4) {
             if key == .fn {
@@ -117,8 +120,7 @@ struct VoiceTriggerKeycap: View {
             }
         }.foregroundStyle(.primary.opacity(0.7))
             .padding(.horizontal, 7).frame(height: 22)
-            .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 5))
-            .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(.primary.opacity(0.10)) }
+            .background(UIUIStyle.chip(scheme), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .fixedSize(horizontal: true, vertical: false)
             .help(key.title).accessibilityLabel(key.title)
     }

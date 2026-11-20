@@ -29,6 +29,7 @@ struct SettingsView: View {
     @State private var showDeleteEverything = false
     @State private var deleteResult: String?
     @State private var deleting = false
+    @Environment(\.colorScheme) private var scheme
 
     init(model: AppModel, pane: SettingsPane = .general) {
         self.model = model
@@ -43,12 +44,9 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Settings section", selection: $pane) {
-                ForEach(SettingsPane.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden().controlSize(.large)
-            .accessibilityLabel("Settings section")
-            .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 10)
+            SettingsTabBar(selection: $pane)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 22).padding(.top, 16).padding(.bottom, 12)
             .background {
                 // Command-1 to Command-5 switch sections from the keyboard.
                 HStack {
@@ -59,7 +57,7 @@ struct SettingsView: View {
                 }.opacity(0).accessibilityHidden(true).allowsHitTesting(false)
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     switch pane {
                     case .general: general
                     case .shortcut: shortcut
@@ -68,10 +66,11 @@ struct SettingsView: View {
                     case .privacy: privacy
                     }
                     if pane == .general { ModelStatusView(model: model) }
-                }.padding(.horizontal, 18).padding(.bottom, 18).padding(.top, 4)
+                }.padding(.horizontal, 22).padding(.bottom, 22).padding(.top, 12)
                     .frame(maxWidth: 620, alignment: .leading).frame(maxWidth: .infinity, alignment: .center)
             }
         }
+        .background(UIUIStyle.paper(scheme))
         .alert("Delete unfinished recording drafts?", isPresented: $showDisableRecordingRecovery) {
             Button("Cancel", role: .cancel) { }
             Button("Delete drafts and turn off", role: .destructive) { model.settings.keepRecordingRecovery = false }
@@ -97,74 +96,65 @@ struct SettingsView: View {
     @ViewBuilder private var general: some View {
         SetupStatusCard(model: model)
         SettingsCard(title: "Speech", symbol: "waveform", compact: true) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Language").font(.system(size: 12, weight: .medium))
-                    Text(SpeechLanguageOptions.detail(for: model.settings.speechLocale))
-                        .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
+            SettingsRow(title: "Language", detail: SpeechLanguageOptions.detail(for: model.settings.speechLocale)) {
                 Picker("Language", selection: $model.settings.speechLocale) {
                     Text(SpeechLanguageOptions.primary.title).tag(SpeechLanguageOptions.primary.locale)
                     Divider()
                     Section("Other languages") {
                         ForEach(SpeechLanguageOptions.others(including: model.settings.speechLocale)) { Text($0.title).tag($0.locale) }
                     }
-                }.labelsHidden().frame(width: 200)
+                }.labelsHidden().frame(width: 190)
             }
-            Divider().opacity(0.4)
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Speech model").font(.system(size: 12, weight: .medium))
-                    Text(model.speechPreparationStatus.isEmpty
+            SettingsHairline()
+            SettingsRow(title: "Speech model", detail: model.speechPreparationStatus.isEmpty
                          ? (LocalSpeechModel.supports(locale: model.settings.speechLocale)
                             ? LocalCleanupModel.speechSummary
                             : "Apple’s on-device speech. macOS manages the language data.")
-                         : model.speechPreparationStatus)
-                        .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
+                         : model.speechPreparationStatus) {
                 if model.isPreparingSpeech {
                     if let fraction = model.speechPreparationFraction {
                         ProgressView(value: fraction).progressViewStyle(.linear).tint(UIUIStyle.accent).frame(width: 120)
                             .accessibilityLabel("Speech model progress").accessibilityValue("\(Int(fraction * 100)) percent")
                     } else { ProgressView().controlSize(.small).accessibilityLabel("Setting up speech") }
                 } else {
-                    Button(SpeechLanguageOptions.setupButtonTitle(locale: model.settings.speechLocale, modelInstalled: LocalSpeechModel.isInstalled)) {
-                        model.prepareSpeechModel()
-                    }.font(.system(size: 11))
+                    HStack(spacing: 8) {
+                        if LocalSpeechModel.isInstalled && LocalSpeechModel.supports(locale: model.settings.speechLocale) { StatusPill(text: "Ready") }
+                        Button(SpeechLanguageOptions.setupButtonTitle(locale: model.settings.speechLocale, modelInstalled: LocalSpeechModel.isInstalled)) {
+                            model.prepareSpeechModel()
+                        }.buttonStyle(ChipButtonStyle())
+                    }
                 }
             }
-            Divider().opacity(0.4)
+            SettingsHairline()
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Microphone and speech access").font(.system(size: 12, weight: .medium))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Microphone and speech access").font(.system(size: 13, weight: .medium))
                     Text(model.speechAccessStatus)
-                        .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Text(model.speechEngineDescription).font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(model.speechEngineDescription).font(.system(size: 11)).foregroundStyle(.secondary)
                     if let warning = model.speechEngineWarning {
-                        Text(warning).font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                        Text(warning).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("Status: \(model.speechStatus)")
-                        .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Button("Check permissions") { model.requestPermissions() }.font(.system(size: 11))
+                Button("Check permissions") { model.requestPermissions() }.buttonStyle(ChipButtonStyle())
             }
         }
         SettingsCard(title: "Look", symbol: "macbook", compact: true) {
             settingToggle("Show uiui at the notch", detail: "Shows recording and status at the top of the screen.", value: $model.settings.notchEnabled)
-            Divider().opacity(0.4)
+            SettingsHairline()
             NotchStylePicker(selection: $model.settings.notchVisualStyle)
-            Divider().opacity(0.4)
+            SettingsHairline()
             NotchSizePicker(selection: $model.settings.notchSize)
-            Divider().opacity(0.4)
+            SettingsHairline()
             AccentPicker(choice: $model.settings.accent, customHex: $model.settings.accentCustomHex)
-            Divider().opacity(0.4)
+            SettingsHairline()
             settingToggle("Open on hover", detail: "Opens the notch when you point at it.", value: $model.settings.openOnHover)
-            Divider().opacity(0.4)
+            SettingsHairline()
             settingToggle("Quiet mode", detail: "Keeps the notch closed when you point at it, even if Open on hover is on.", value: $model.settings.quietMode)
-            Divider().opacity(0.4)
+            SettingsHairline()
             settingToggle("Launch at login", detail: "Opens uiui when you log in to your Mac.", value: $model.settings.launchAtLogin)
         }
         SettingsCard(title: "Sound and feel", symbol: "speaker.wave.1", compact: true) {
@@ -173,7 +163,7 @@ struct SettingsView: View {
                 SoundChoice(pack: $model.settings.soundPack, volume: $model.settings.soundVolume,
                             preview: { model.previewRecordingSound() })
             }
-            Divider().opacity(0.4)
+            SettingsHairline()
             settingToggle("Trackpad feedback", detail: "A light tap on the trackpad at the same moments. You feel it only while a finger is on the trackpad.", value: $model.settings.trackpadFeedbackEnabled)
         }
         if let updater = model.updater { UpdatesCard(updater: updater) }
@@ -184,33 +174,30 @@ struct SettingsView: View {
     @ViewBuilder private var shortcut: some View {
         SettingsCard(title: "Voice shortcut", symbol: "keyboard", compact: true) {
             settingToggle("Use the voice shortcut", detail: "uiui watches for this key only. The microphone stays off until you press it.", value: $model.settings.voiceTriggerEnabled)
-            Divider().opacity(0.4)
+            SettingsHairline()
             ShortcutRecorder(model: model)
-            Picker("Activation", selection: $model.settings.voiceTriggerMode) {
-                Text(VoiceTriggerMode.toggle.title).tag(VoiceTriggerMode.toggle)
-                Text(VoiceTriggerMode.hold.title).tag(VoiceTriggerMode.hold)
-            }.font(.system(size: 12)).disabled(model.voiceIsRecording)
-            Text(model.settings.voiceTriggerMode == .toggle
+            SettingsHairline()
+            SettingsRow(title: "Activation", detail: model.settings.voiceTriggerMode == .toggle
                  ? "Tap \(model.settings.voiceTriggerKey.title) to dictate. Tap again to finish."
-                 : "Hold \(model.settings.voiceTriggerKey.title) to dictate; release to finish.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                 : "Hold \(model.settings.voiceTriggerKey.title) to dictate; release to finish.") {
+                Picker("Activation", selection: $model.settings.voiceTriggerMode) {
+                    Text(VoiceTriggerMode.toggle.title).tag(VoiceTriggerMode.toggle)
+                    Text(VoiceTriggerMode.hold.title).tag(VoiceTriggerMode.hold)
+                }.pickerStyle(.menu).labelsHidden().frame(width: 235).disabled(model.voiceIsRecording)
+                    .accessibilityLabel("Activation")
+            }
             if model.settings.voiceTriggerKey == .fn, SystemSetup.shared.fnKeyAction != .nothing {
                 HStack {
                     Text("macOS also uses Fn to \(SystemSetup.shared.fnKeyAction?.title.lowercased() ?? "show emoji or switch input"). Set “Press 🌐 key to” Do Nothing.")
-                        .font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                    Button("Keyboard settings…") { SystemSetup.shared.open(.keyboard) }.font(.system(size: 11))
+                    Button("Keyboard settings…") { SystemSetup.shared.open(.keyboard) }.buttonStyle(ChipButtonStyle())
                 }
             }
-            Divider().opacity(0.4)
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Shortcut access").font(.system(size: 12, weight: .medium))
-                    Text(model.voiceTriggerStatus).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
+            SettingsHairline()
+            SettingsRow(title: "Shortcut access", detail: model.voiceTriggerStatus, alignment: .top) {
                 if !SystemSetup.shared.accessibilityTrusted {
-                    Button("Allow Accessibility…") { model.requestVoiceTriggerAccess() }.font(.system(size: 11))
+                    Button("Allow Accessibility…") { model.requestVoiceTriggerAccess() }.buttonStyle(ChipButtonStyle())
                 }
             }
             if let error = model.voiceError {
@@ -229,16 +216,17 @@ struct SettingsView: View {
                 Text("No words yet. Add a name below, like Priya.")
                     .font(.system(size: 11)).foregroundStyle(.tertiary).padding(.vertical, 7)
             } else {
-                ForEach(model.settings.vocabulary) { entry in
+                ForEach(Array(model.settings.vocabulary.enumerated()), id: \.element.id) { index, entry in
+                    if index > 0 { SettingsHairline() }
                     HStack(spacing: 10) {
                         Group {
                             if !entry.isSpellingOnly {
-                                Text(entry.heard).font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading)
-                                Image(systemName: "arrow.right").font(.system(size: 10)).foregroundStyle(.tertiary).accessibilityHidden(true)
+                                Text(entry.heard).font(.system(size: 13)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                                Image(systemName: "arrow.right").font(.system(size: 11)).foregroundStyle(.tertiary).accessibilityHidden(true)
                             }
-                            Text(entry.replacement).font(.system(size: 11, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading)
+                            Text(entry.replacement).font(UIUIStyle.words(14)).frame(maxWidth: .infinity, alignment: .leading)
                             if entry.project != "All projects" {
-                                Text(entry.project).font(.system(size: 9)).foregroundStyle(.tertiary)
+                                Text(entry.project).font(.system(size: 10)).foregroundStyle(.tertiary)
                                     .accessibilityLabel("Word group \(entry.project)")
                             }
                         }.accessibilityElement(children: .combine)
@@ -254,32 +242,33 @@ struct SettingsView: View {
                     }
                 }
             }
-            Divider().opacity(0.4)
+            SettingsHairline()
             HStack(spacing: 10) {
                 if usesShorthand {
-                    TextField("When I say…", text: $heard).textFieldStyle(.roundedBorder).accessibilityLabel("When I say")
-                    Image(systemName: "arrow.right").font(.system(size: 10)).foregroundStyle(.secondary).accessibilityHidden(true)
+                    TextField("When I say…", text: $heard).textFieldStyle(.plain).settingsField().accessibilityLabel("When I say")
+                    Image(systemName: "arrow.right").font(.system(size: 11)).foregroundStyle(.secondary).accessibilityHidden(true)
                 }
-                TextField(usesShorthand ? "Write this" : "Name or word", text: $replacement).textFieldStyle(.roundedBorder)
+                TextField(usesShorthand ? "Write this" : "Name or word", text: $replacement).textFieldStyle(.plain).settingsField()
                     .accessibilityLabel(usesShorthand ? "Write this" : "Name or word")
-            }.font(.system(size: 11))
+            }.font(.system(size: 13))
             HStack {
                 Toggle("Say one thing, write another", isOn: $usesShorthand).toggleStyle(.checkbox)
                     .help("For shorthand, like “q three” written as Q3. Names don’t need this.")
                 Spacer()
-                if editingVocabularyID != nil { Button("Cancel edit") { resetDictionaryForm() } }
+                if editingVocabularyID != nil { Button("Cancel edit") { resetDictionaryForm() }.buttonStyle(ChipButtonStyle()) }
                 Button(editingVocabularyID == nil ? "Add word" : "Save word") { saveWord() }
+                    .buttonStyle(ChipButtonStyle())
                     .disabled(replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (usesShorthand && heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-            }.font(.system(size: 11))
+            }.font(.system(size: 12))
             if let dictionaryIssue {
-                Text(dictionaryIssue).font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                Text(dictionaryIssue).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             if hasScopedEntries {
-                Divider().opacity(0.4)
+                SettingsHairline()
                 DisclosureGroup("Advanced: word groups") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Some of your words belong to a group, so they apply only while that group is active. Words without a group always apply.")
-                            .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         Picker("Group in use", selection: $model.captureProject) {
                             ForEach(model.projects, id: \.self) { Text($0).tag($0) }
                         }.font(.system(size: 11)).disabled(model.hasCancellableVoiceInput)
@@ -319,17 +308,17 @@ struct SettingsView: View {
             privacyLine("Dictionary and settings", "Your words, shortcut, language and appearance choices.")
             privacyLine("Usage counts", "How long dictation took, how many words, and how often agents asked and were answered. Never the words themselves.")
             Text("uiui does not save raw audio. Sound is turned into text as you speak and then discarded.")
-                .font(.system(size: 11, weight: .medium)).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12, weight: .medium)).fixedSize(horizontal: false, vertical: true)
         }
         SettingsCard(title: "Never sent anywhere", symbol: "lock", compact: true) {
             Text("Your voice and your text never leave this Mac. Speech recognition and punctuation both run on the device.")
-                .font(.system(size: 11, weight: .medium)).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12, weight: .medium)).fixedSize(horizontal: false, vertical: true)
             Text("uiui uses the internet only to check for new versions of uiui, to download an update you choose to install, and to download speech models when you ask. Those requests carry no audio, text or personal data. Hindi uses Apple’s on-device speech, and macOS itself may download Hindi language data. When uiui pastes, it uses your clipboard. If you turn on Agents, each answer you give goes to the agent that asked.")
-                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         SettingsCard(title: "What to keep", symbol: "clock.arrow.circlepath", compact: true) {
             settingToggle("Keep dictation history", detail: "Save the text of finished dictations in History on this Mac.", value: $model.settings.saveDictationHistory)
-            Divider().opacity(0.4)
+            SettingsHairline()
             settingToggle("Keep unfinished recording drafts", detail: "Keep the last 20 drafts’ recognized text, without audio, so you can recover them. Turning this off deletes the drafts.", value: Binding(
                 get: { model.settings.keepRecordingRecovery },
                 set: { enabled in
@@ -344,7 +333,7 @@ struct SettingsView: View {
             HStack {
                 Button(role: .destructive) { showDeleteEverything = true } label: {
                     Text(deleting ? "Deleting…" : "Delete everything…")
-                }.disabled(deleting || model.hasCancellableVoiceInput).font(.system(size: 11))
+                }.buttonStyle(ChipButtonStyle()).foregroundStyle(.red).disabled(deleting || model.hasCancellableVoiceInput)
                 if let deleteResult {
                     Text(deleteResult).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel(deleteResult)
@@ -355,21 +344,16 @@ struct SettingsView: View {
 
     private func privacyLine(_ title: String, _ detail: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).accessibilityHidden(true)
+            Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(UIUIStyle.tint(scheme)).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .medium))
-                Text(detail).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(title).font(.system(size: 13, weight: .medium))
+                Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }.accessibilityElement(children: .combine)
     }
 
     private func settingToggle(_ title: String, detail: String, value: Binding<Bool>) -> some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 12, weight: .medium))
-                Text(detail).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }.accessibilityHidden(true)
-            Spacer()
+        SettingsRow(title: title, detail: detail, hidesText: true) {
             Toggle(title, isOn: value).toggleStyle(.switch).controlSize(.small).labelsHidden()
                 .accessibilityLabel(title).accessibilityHint(detail)
         }
@@ -382,13 +366,14 @@ struct SettingsCard<Content: View>: View {
     var compact = false
     @ViewBuilder let content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 12 : 17) {
-            Label(title, systemImage: symbol).font(.system(size: 13, weight: .semibold))
-                .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 9) {
+                Image(systemName: symbol).font(.system(size: 13, weight: .regular)).frame(width: 18).accessibilityHidden(true)
+                Text(title).font(.system(size: 14.5, weight: .semibold))
+            }.accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
             content
-        }.padding(compact ? 14 : 21).frame(maxWidth: .infinity, alignment: .leading)
-            .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: compact ? 10 : 15))
-            .overlay { RoundedRectangle(cornerRadius: compact ? 10 : 15).strokeBorder(.primary.opacity(0.055)) }
+        }.padding(.horizontal, 20).padding(.top, 17).padding(.bottom, 19).frame(maxWidth: .infinity, alignment: .leading)
+            .uiuiCard(radius: 18)
     }
 }
 
@@ -407,21 +392,20 @@ private struct SetupStatusCard: View {
             if setup.shouldMoveToApplications {
                 row("Location", ok: false, detail: "Move uiui to Applications so permissions and updates stick")
             }
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
-                if setup.needsRelaunchForAccessibility { Button("Reopen uiui") { setup.relaunch() }.font(.system(size: 11)) }
-                Button("Open setup guide…") { model.openOnboarding() }.font(.system(size: 11))
+                if setup.needsRelaunchForAccessibility { Button("Reopen uiui") { setup.relaunch() }.buttonStyle(ChipButtonStyle()) }
+                Button("Open setup guide…") { model.openOnboarding() }.buttonStyle(ChipButtonStyle())
             }
         }
     }
 
     private func row(_ title: String, ok: Bool, detail: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(ok ? Color.green : Color.orange)
-                .accessibilityHidden(true)
-            Text(title).font(.system(size: 12, weight: .medium))
-            Spacer()
-            Text(detail).font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+        HStack(spacing: 12) {
+            PermissionBadge(ok: ok)
+            Text(title).font(.system(size: 13.5))
+            Spacer(minLength: 12)
+            Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
         }.accessibilityElement(children: .combine)
             .accessibilityLabel("\(title): \(ok ? "ready" : "needs attention"). \(detail)")
     }
@@ -432,26 +416,14 @@ private struct UpdatesCard: View {
 
     var body: some View {
         SettingsCard(title: "Updates", symbol: "arrow.down.circle", compact: true) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("uiui \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
-                        .font(.system(size: 12, weight: .medium))
-                    Text(updater.status).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
+            SettingsRow(title: "uiui \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")", detail: updater.status) {
                 if updater.isBusy { ProgressView().controlSize(.small).accessibilityLabel("Working") }
                 else if let release = updater.available {
-                    Button("Install \(release.version.description)") { updater.installAvailableUpdate() }.font(.system(size: 11))
-                } else { Button("Check for updates") { updater.checkNow() }.font(.system(size: 11)) }
+                    Button("Install \(release.version.description)") { updater.installAvailableUpdate() }.buttonStyle(ChipButtonStyle())
+                } else { Button("Check for updates") { updater.checkNow() }.buttonStyle(ChipButtonStyle()) }
             }
-            Divider().opacity(0.4)
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Check automatically").font(.system(size: 12, weight: .medium))
-                    Text("At most once a day, when uiui opens or the Mac wakes. App updates never re-download speech models.")
-                        .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }.accessibilityHidden(true)
-                Spacer()
+            SettingsHairline()
+            SettingsRow(title: "Check automatically", detail: "At most once a day, when uiui opens or the Mac wakes. App updates never re-download speech models.", hidesText: true) {
                 Toggle("Check automatically", isOn: $updater.automaticChecks).toggleStyle(.switch).controlSize(.small).labelsHidden()
                     .accessibilityLabel("Check for updates automatically")
             }

@@ -15,17 +15,17 @@ struct AgentSettingsPane: View {
         SettingsCard(title: "Let your agent ask you", symbol: "questionmark.bubble", compact: true) {
             Text("uiui has no agent of its own. This lets the coding agent you already use ask you a question in the notch, and you answer out loud from any app, without going back to the terminal.")
                 .font(.system(size: 11, weight: .medium)).fixedSize(horizontal: false, vertical: true)
-            Divider().opacity(0.4)
+            SettingsHairline()
             Toggle(isOn: $model.settings.agentAskEnabled) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Let agents ask you").font(.system(size: 12, weight: .medium))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Let agents ask you").font(.system(size: 13, weight: .medium))
                     Text("Hold \(model.agentAnswerKey.title) to answer, or tap it to talk for longer. Only your press opens the microphone.")
                         .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.toggleStyle(.switch)
+            }.toggleStyle(.switch).controlSize(.small)
             if model.settings.agentAskEnabled {
                 Button("Send a test question") { model.sendTestAgentQuestion() }
-                    .controlSize(.small).help("Shows a question in the notch. Your answer goes nowhere.")
+                    .buttonStyle(ChipButtonStyle()).help("Shows a question in the notch. Your answer goes nowhere.")
             }
         }
         SettingsCard(title: "Connect your agents", symbol: "link", compact: true) {
@@ -35,14 +35,15 @@ struct AgentSettingsPane: View {
                 Text("No Claude Code, Codex or OpenCode found on this Mac.").font(.system(size: 12))
             }
             ForEach(installed) { agent in
-                HStack {
-                    Text(agent.name).font(.system(size: 12, weight: .medium))
+                if agent.id != installed.first?.id { SettingsHairline() }
+                HStack(spacing: 8) {
+                    Text(agent.name).font(.system(size: 13, weight: .medium))
                     Spacer()
                     if agent.isConnected {
-                        Label("Connected", systemImage: "checkmark").font(.system(size: 11)).foregroundStyle(.secondary)
-                        Button("Disconnect") { change { try AgentConnections.disconnect(agent) } }.controlSize(.small)
+                        StatusPill(text: "Connected")
+                        Button("Disconnect") { change { try AgentConnections.disconnect(agent) } }.buttonStyle(ChipButtonStyle())
                     } else {
-                        Button("Connect") { change { try AgentConnections.connect(agent) } }.controlSize(.small)
+                        Button("Connect") { change { try AgentConnections.connect(agent) } }.buttonStyle(ChipButtonStyle())
                     }
                 }
             }
@@ -52,15 +53,15 @@ struct AgentSettingsPane: View {
             }
             Text("A new agent session picks it up. You can also just tell your agent to use uiui ask.")
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Divider().opacity(0.4)
+            SettingsHairline()
             VStack(alignment: .leading, spacing: 6) {
-                Text("Using another agent?").font(.system(size: 12, weight: .medium))
+                Text("Using another agent?").font(.system(size: 13, weight: .medium))
                 Text("Copy these instructions into its instructions file.").font(.system(size: 11)).foregroundStyle(.secondary)
                 Button(copied ? "Copied" : "Copy instructions") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(AgentConnections.instructions(commandPath: AgentConnections.commandPath), forType: .string)
                     copied = true
-                }.controlSize(.small)
+                }.buttonStyle(ChipButtonStyle())
             }
         }
         SettingsCard(title: "What your agent gets", symbol: "lock", compact: true) {
